@@ -126,6 +126,16 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .blank{display:inline-block;min-width:3em;border-bottom:2px solid var(--jade);margin:0 .25em;line-height:1.4;vertical-align:baseline}
 .blank.fill{min-width:0;padding:0 .3em;color:var(--ok);font-weight:700;border-bottom-color:var(--ok)}
 .ritems .note{grid-column:2;font-size:.85rem;color:var(--sub);background:var(--jade-soft);border-radius:4px;padding:4px 8px;margin-top:2px}
+.play{display:inline-flex;align-items:center;gap:10px;justify-self:start;background:var(--card);color:var(--jade);border:1px solid var(--jade);border-radius:999px;padding:7px 18px 7px 8px;font-weight:700;font-size:.95rem;cursor:pointer}
+.play .ic{width:2rem;height:2rem;border-radius:50%;background:var(--jade);color:var(--on-jade);display:grid;place-items:center;flex:none}
+.play .ic svg{width:.85rem;height:.85rem;fill:currentColor}
+.play.playing{background:var(--jade-soft)}
+.play.sm{padding:3px 12px 3px 4px;font-size:.82rem;gap:6px}
+.play.sm .ic{width:1.5rem;height:1.5rem}
+.play.sm .ic svg{width:.65rem;height:.65rem}
+.audio-err{margin:0;font-size:.85rem;color:var(--ng)}
+.lq-text{margin:0;font-weight:500;line-height:1.7}
+.ritems .lq{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
 details.reread summary{cursor:pointer;color:var(--jade);font-size:.88rem;font-weight:700}
 details.reread .p-text{margin-top:10px}
 [hidden]{display:none!important}
@@ -293,12 +303,13 @@ details.reread .p-text{margin-top:10px}
     } else if (!st.count){
       h += '<div class="state"><span class="dot"></span>第' + esc(st.round) + '回の問題はまだ準備中です</div>';
     } else {
-      var parts = [];
+      var lb = labels(st), parts = [];
       if (st.countWords) parts.push('単語' + st.countWords);
-      if (st.countCloze) parts.push('穴埋め' + st.countCloze);
+      if (st.countCloze) parts.push(lb.cloze + st.countCloze);
+      if (st.countListen) parts.push(lb.listen + st.countListen);
       if (st.countReading) parts.push('読解' + st.countReading);
       var kinds = parts.length > 1 ? '（' + parts.join('・') + '）'
-                : st.countReading ? '（読解）' : st.countCloze ? '（穴埋め）' : '';
+                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countListen ? '（' + lb.listen + '）' : '';
       h += '<div class="state"><span class="dot go"></span>第' + esc(st.round) + '回　全' + st.count + '問' + kinds + '</div>';
       h += '<p class="muted">提出できるのは1回だけです。すべて答えてから提出してください。</p>';
       h += '<button class="btn" type="button" id="startBtn">テストを受ける</button>';
@@ -354,7 +365,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code, opts).then(function(res){
       if (!res.ok){ renderPreviewHome(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.answers = {}; renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.answers = {}; renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'この内容で受けてみる'; alertInline(netError()); });
   }
 
@@ -363,7 +374,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code).then(function(res){
       if (!res.ok){ loadHomeWith(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.answers = {}; renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.answers = {}; renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'テストを受ける'; alertInline(netError()); });
   }
   function loadHomeWith(msg){
@@ -374,13 +385,14 @@ details.reread .p-text{margin-top:10px}
     app.insertBefore(p, app.firstChild);
   }
   function totalCount(){
-    var n = S.test.questions.length + S.test.cloze.length;
+    var n = S.test.questions.length + S.test.cloze.length + S.test.listen.length;
     S.test.reading.forEach(function(p){ n += p.questions.length; });
     return n;
   }
   function renderTest(){
-    var t = S.test, h = '', no = 0;
-    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.reading.length ? 1 : 0) > 1;
+    var t = S.test, h = '', no = 0, lb = labels(t);
+    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) > 1;
+    stopAudio(); S.audioSrc = {};
     S.groups = [];
     if (t.preview) h += '<p class="pv-banner">プレビュー中：第' + esc(t.round) + '回／' + esc(S.pvLabel || '') + '。提出しても記録は残りません。</p>';
     h += '<p class="muted">第' + esc(t.round) + '回　全' + totalCount() + '問　最後に画面下の「提出する」を押してください。</p>';
@@ -399,13 +411,23 @@ details.reread .p-text{margin-top:10px}
       });
       h += '</div></section>';
     });
-    if (t.cloze.length && multi) h += '<h2 class="sec-title">穴埋め</h2>';
+    if (t.cloze.length && multi) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
     t.cloze.forEach(function(q, i){
       var g = 'c' + i;
       no++; S.groups.push(g);
       h += '<section class="q" id="' + g + '">';
-      h += '<div class="q-head"><b>問' + no + '</b><span>空欄に入るものを選ぶ</span></div>';
+      h += '<div class="q-head"><b>問' + no + '</b><span>' + (hasBlank(q.text) ? '空欄に入るものを選ぶ' : '正しいものを選ぶ') + '</span></div>';
       h += '<p class="cz-text" lang="zh-CN">' + clozeHtml(q.text) + '</p>';
+      h += keyedOpts(g, no, q.options) + '</section>';
+    });
+    if (t.listen.length && multi) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
+    t.listen.forEach(function(q, i){
+      var g = 'l' + i;
+      no++; S.groups.push(g);
+      h += '<section class="q" id="' + g + '">';
+      h += '<div class="q-head"><b>問' + no + '</b><span>聞いて選ぶ</span></div>';
+      h += playHtml(g, q, false);
+      if (q.text) h += '<p class="lq-text">' + esc(q.text) + '</p>';
       h += keyedOpts(g, no, q.options) + '</section>';
     });
     if (t.reading.length && multi) h += '<h2 class="sec-title">読解</h2>';
@@ -426,6 +448,45 @@ details.reread .p-text{margin-top:10px}
     renderBar();
     scrollTop();
   }
+  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', listen: l.listen || '聴解' }; }
+
+  /* ---------- 音声（聴解） ---------- */
+  var PLAY_SVG = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>';
+  var STOP_SVG = '<svg viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" rx="1"/></svg>';
+  var AU = { el: null, btn: null };
+  function playHtml(key, q, small){
+    if (!q.audio) return q.audioError ? '<p class="audio-err">' + esc(q.audioError) + '</p>' : '';
+    S.audioSrc[key] = 'data:' + q.audio.mime + ';base64,' + q.audio.data;
+    return '<button type="button" class="play' + (small ? ' sm' : '') + '" data-play="' + key + '" aria-label="音声を再生">' +
+           '<span class="ic">' + PLAY_SVG + '</span><span class="lb">' + (small ? '聞く' : '再生') + '</span></button>';
+  }
+  function setPlaying(btn, on){
+    btn.classList.toggle('playing', on);
+    btn.querySelector('.ic').innerHTML = on ? STOP_SVG : PLAY_SVG;
+    btn.setAttribute('aria-label', on ? '停止' : '音声を再生');
+  }
+  function stopAudio(){
+    if (AU.el){ try { AU.el.pause(); } catch (e) {} AU.el = null; }
+    if (AU.btn){ setPlaying(AU.btn, false); AU.btn = null; }
+  }
+  function playAudio(btn){ // 何回でも聞ける。再生中にもう一度押すと止まる
+    var src = (S.audioSrc || {})[btn.getAttribute('data-play')];
+    var same = AU.btn === btn;
+    stopAudio();
+    if (same || !src) return;
+    var el = new Audio(src);
+    AU.el = el; AU.btn = btn; setPlaying(btn, true);
+    var fail = function(){
+      if (AU.el !== el) return;
+      stopAudio();
+      if (!btn.nextElementSibling || !btn.nextElementSibling.classList.contains('audio-err'))
+        btn.insertAdjacentHTML('afterend', '<p class="audio-err">この端末では再生できませんでした。音量と、ほかのアプリの音を確認してください。</p>');
+    };
+    el.onended = function(){ if (AU.el === el) stopAudio(); };
+    el.onerror = fail;
+    var pr = el.play(); if (pr && pr.catch) pr.catch(fail);
+  }
+
   function keyedOpts(g, no, options){ // A〜D の記号つき選択肢（読解・穴埋め）
     var h = '<div class="opts" role="radiogroup" aria-label="問' + no + 'の選択肢">';
     options.forEach(function(o, j){
@@ -491,8 +552,13 @@ details.reread .p-text{margin-top:10px}
       var v = S.answers['c' + i];
       return { text: q.text, choice: v != null ? q.options[v] : '' };
     });
-    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers).then(function(res){
+    var lAnswers = S.test.listen.map(function(q, i){
+      var v = S.answers['l' + i];
+      return { i: i, choice: v != null ? q.options[v] : '' };
+    });
+    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers).then(function(res){
       if (!res.ok){ bar.hidden = true; loadHomeWith(res.error); return; }
+      (res.result.listen || []).forEach(function(q, i){ var t = S.test.listen[i]; if (t && t.audio) q.audio = t.audio; }); // 結果でも聞き直せるように
       bar.hidden = true; S.test = null; renderResult(res.result, true);
     }, function(){
       btn.disabled = false; btn.textContent = '提出する';
@@ -509,13 +575,14 @@ details.reread .p-text{margin-top:10px}
     }, function(){ if (btn) btn.disabled = false; alertInline(netError()); });
   }
   function renderResult(r, justSubmitted){
-    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [];
+    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], listen = r.listen || [], lb = labels(r);
+    stopAudio(); S.audioSrc = {};
     var h = '<section class="card">';
     if (r.preview) h += '<p class="pv-banner">プレビューの結果です（記録はされていません）。</p>';
     h += '<h2>第' + esc(r.round) + '回の結果</h2>';
     h += '<div class="score"><span class="big">' + r.correct + ' / ' + r.total + '</span><span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
     if (items.length){
-      if (reading.length || cloze.length) h += '<h2 class="sec-title">単語</h2>';
+      if (reading.length || cloze.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
       h += '<ul class="items">';
       items.forEach(function(x){
         h += '<li><span class="m ' + (x.ok ? 'ok' : 'ng') + '" aria-label="' + (x.ok ? '正解' : '不正解') + '">' + (x.ok ? '○' : '×') + '</span>' +
@@ -526,13 +593,25 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     if (cloze.length){
-      if (items.length || reading.length) h += '<h2 class="sec-title">穴埋め</h2>';
+      if (items.length || reading.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
       h += '<ul class="ritems">';
       cloze.forEach(function(q){
         var blank = hasBlank(q.text);
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
              '<span class="qt" lang="zh-CN">' + clozeHtml(q.text, blank ? q.answer : null) + '</span>' +
              (blank ? '' : '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>') +
+             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') +
+             (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
+      });
+      h += '</ul>';
+    }
+    if (listen.length){
+      if (items.length || reading.length || cloze.length) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
+      h += '<ul class="ritems">';
+      listen.forEach(function(q, i){
+        h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
+             '<span class="lq">' + (q.audio ? playHtml('r' + i, q, true) : '') + (q.text ? '<span>' + esc(q.text) + '</span>' : '') + '</span>' +
+             '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>' +
              (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') +
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
       });
@@ -559,7 +638,7 @@ details.reread .p-text{margin-top:10px}
   /* ---------- イベント ---------- */
   document.addEventListener('change', function(e){
     var g = e.target.name;
-    if (!g || !/^(q\d+|c\d+|r\d+_\d+)$/.test(g) || !S.test) return;
+    if (!g || !/^(q\d+|c\d+|l\d+|r\d+_\d+)$/.test(g) || !S.test) return;
     S.answers[g] = Number(e.target.value);
     var sec = document.getElementById(g); if (sec) sec.classList.remove('unanswered');
     if (!bar.querySelector('#confirmBtn')) renderBar();
@@ -579,8 +658,9 @@ details.reread .p-text{margin-top:10px}
       var target = document.getElementById(first || (S.groups && S.groups[0]) || '');
       if (target) target.scrollIntoView({ block: 'center' });
     }
-    else if (b.id === 'confirmBtn') submitTest(b);
-    else if (b.id === 'homeBtn'){ app.innerHTML = '<p class="loading">読み込んでいます…</p>'; loadHome(); }
+    else if (b.id === 'confirmBtn'){ stopAudio(); submitTest(b); }
+    else if (b.hasAttribute('data-play')) playAudio(b);
+    else if (b.id === 'homeBtn'){ stopAudio(); app.innerHTML = '<p class="loading">読み込んでいます…</p>'; loadHome(); }
     else if (b.id === 'logout'){ S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
     else if (b.id === 'installBtn' && S.installEvt){ S.installEvt.prompt(); S.installEvt = null; refreshInstall(); }
     else if (b.dataset.result) openResult(b.dataset.result, b);
