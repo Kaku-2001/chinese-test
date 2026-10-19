@@ -2,7 +2,8 @@
  * 中国語 単語テスト（Googleスプレッドシート + Apps Script）
  *
  * 学生は受験コードで入り、「今週の回」のテストを1回だけ受けられる。
- * 出題は 単語（語リスト）・穴埋め・聴解（音声を聞いて選ぶ）・読解・スピーキング（指定した拼音を発音して録音）の組み合わせ。
+ * 出題は 単語（語リスト）・穴埋め・並べ替え（4つの文から正しくないものを選ぶ）・聴解（音声を聞いて選ぶ）・読解・
+ * スピーキング（指定した拼音を発音して録音）の組み合わせ。
  * スピーキングの録音はGoogleドライブの「録音フォルダ」に保存し、評価は先生が「スピーキング提出」シートに書き込む。
  * 結果は「提出」「解答明細」などのシートに溜まり、学生は自分の結果だけを何度でも見られる。
  * 採点はすべてサーバー側で行い、正解は提出前の画面には送らない。
@@ -12,6 +13,7 @@ var SHEET = {
   settings: '設定', students: '学生', words: '語リスト', subs: '提出', detail: '解答明細',
   rtext: '読解本文', rq: '読解設問', rsubs: '読解提出', rdetail: '読解明細',
   cloze: '穴埋め', csubs: '穴埋め提出', cdetail: '穴埋め明細',
+  order: '並べ替え', osubs: '並べ替え提出', odetail: '並べ替え明細',
   listen: '聴解', lsubs: '聴解提出', ldetail: '聴解明細',
   speak: 'スピーキング', sdetail: 'スピーキング提出'
 };
@@ -27,17 +29,21 @@ var HEAD = {
   cloze: ['回', 'コード', '問題文', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解（A〜D）', '解説（任意）'],
   csubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   cdetail: ['提出日時', '回', 'コード', '表示名', '問題文', '正解', '学生の解答', '正誤'],
+  order: ['回', 'コード', '文①', '文②', '文③', '文④', '正しくない文（1〜4）', '解説（任意）'],
+  osubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
+  odetail: ['提出日時', '回', 'コード', '表示名', '文（①〜④）', '正解', '学生の解答', '正誤'],
   listen: ['回', 'コード', '音声ファイル名', '問題文（任意）', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解（A〜D）', '解説（任意）'],
   lsubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   ldetail: ['提出日時', '回', 'コード', '表示名', '音声ファイル名', '問題文', '正解', '学生の解答', '正誤'],
   speak: ['回', 'コード', '拼音（発音してもらう）', '補足（任意）', 'お手本の音声ファイル名（任意）', '録音の長さ（秒・任意）'],
   sdetail: ['提出日時', '回', 'コード', '表示名', '課題', '録音', '評価（先生が入力）', 'コメント（先生が入力）']
 };
-var RESULT_SHEETS = ['subs', 'rsubs', 'csubs', 'lsubs']; // 回ごとの点数を記録するシート（単語・読解・穴埋め・聴解）
+var RESULT_SHEETS = ['subs', 'rsubs', 'csubs', 'lsubs', 'osubs']; // 回ごとの点数を記録するシート（単語・読解・穴埋め・聴解・並べ替え）
 // 後から追加した設定。「初期設定」を押すと、今ある「設定」シートの下に足される
 var EXTRA_SETTINGS = [
   ['穴埋めの見出し', '穴埋め', '「穴埋め」シートの問題の見出し。空欄のない4択（拼音の規則の問題など）に使うときは「拼音」などに変えられます'],
   ['聴解の見出し', '聴解', '「聴解」シートの問題の見出し'],
+  ['並べ替えの見出し', '並べ替え', '「並べ替え」シートの問題の見出し'],
   ['音声フォルダ', '', '聴解の音声ファイルを入れるGoogleドライブのフォルダのURL。空なら「初期設定」で自動で作ります'],
   ['スピーキングの見出し', 'スピーキング', '「スピーキング」シートの課題の見出し'],
   ['録音フォルダ', '', 'スピーキングで学生が録音した音声を保存するGoogleドライブのフォルダのURL（学生ごとのフォルダに分けて保存）。空なら自動で作ります']
@@ -50,6 +56,7 @@ var UNRECORDED = '（録音なし）';
 var AUDIO_MIME = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
   oga: 'audio/ogg', opus: 'audio/ogg', webm: 'audio/webm', flac: 'audio/flac', caf: 'audio/x-caf', '3gp': 'audio/3gpp', amr: 'audio/amr' };
 var LETTERS = ['A', 'B', 'C', 'D'];
+var MARUNUM = ['①', '②', '③', '④'];
 var TZ = 'Asia/Tokyo';
 var ALL = '全員';
 var EXAMPLE = '例'; // 回の欄が「例」の行は見本。出題しない
@@ -194,6 +201,25 @@ function setupSheets() {
     cz.setColumnWidth(9, 280);
     created.push(SHEET.cloze);
   }
+  if (!ss.getSheetByName(SHEET.order)) {
+    var od = ss.insertSheet(SHEET.order);
+    var oex = [ // 回が「例」の行は出題されない（入力の見本）
+      [EXAMPLE, ALL, '我把作业写完了。', '我把写完作业了。', '作业我已经写完了。', '我已经写完作业了。', 2, '「把」の後ろは「目的語＋動詞＋結果」の順'],
+      [EXAMPLE, ALL, '我在图书馆看书。', '我常常在图书馆看书。', '我看书在图书馆。', '我昨天在图书馆看书了。', 3, '場所の「在…」は動詞の前に置く']
+    ];
+    od.getRange(1, 1, 1, HEAD.order.length).setValues([HEAD.order]);
+    od.getRange(2, 1, oex.length, HEAD.order.length).setValues(oex).setFontColor('#9AA5A1').setFontStyle('italic');
+    od.getRange('B:B').setNumberFormat('@');
+    od.getRange('C:H').setWrap(true);
+    od.getRange(2, 7, 999, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['1', '2', '3', '4'], true).build());
+    styleHeader_(od, HEAD.order.length);
+    od.getRange(1, 3).setNote('同じ内容で語順の違う文を①〜④に書きます（2〜4個）。\n学生は、この中から正しくないものを1つ選びます。\n「コード」は「全員」または学生のコード（「,」で区切って何人分も書けます）。\n回が「例」の行は出題されません（入力の見本）。');
+    od.getRange(1, 7).setNote('正しくない文の番号（1〜4）。');
+    od.getRange(1, 8).setNote('任意。学生が結果画面で見られます。');
+    [3, 4, 5, 6].forEach(function (c) { od.setColumnWidth(c, 220); });
+    od.setColumnWidth(8, 260);
+    created.push(SHEET.order);
+  }
   if (!ss.getSheetByName(SHEET.listen)) {
     var ls = ss.insertSheet(SHEET.listen);
     var lex = [ // 回が「例」の行は出題されない（入力の見本）。拼音は数字で書くと声調記号に直して表示する
@@ -240,7 +266,7 @@ function setupSheets() {
     created.push(SHEET.sdetail);
   }
   [[SHEET.rsubs, HEAD.rsubs], [SHEET.rdetail, HEAD.rdetail], [SHEET.csubs, HEAD.csubs], [SHEET.cdetail, HEAD.cdetail],
-   [SHEET.lsubs, HEAD.lsubs], [SHEET.ldetail, HEAD.ldetail]].forEach(function (x) {
+   [SHEET.osubs, HEAD.osubs], [SHEET.odetail, HEAD.odetail], [SHEET.lsubs, HEAD.lsubs], [SHEET.ldetail, HEAD.ldetail]].forEach(function (x) {
     if (!ss.getSheetByName(x[0])) { ensureSheet_(x[0], x[1]); created.push(x[0]); }
   });
   var addedRows = ensureSettingRows_();
@@ -261,7 +287,7 @@ function setupSheets() {
   alert_((created.length
     ? '作成したもの：' + created.join('、') +
       (created.indexOf(SHEET.words) >= 0 ? '\n「語リスト」の8語は動作確認用の例です。実際の語に置き換えてください。' : '') +
-      (created.indexOf(SHEET.cloze) >= 0 || created.indexOf(SHEET.listen) >= 0 || created.indexOf(SHEET.speak) >= 0 ? '\n灰色の行は入力の見本です（回が「例」なので出題されません）。' : '')
+      (created.indexOf(SHEET.cloze) >= 0 || created.indexOf(SHEET.order) >= 0 || created.indexOf(SHEET.listen) >= 0 || created.indexOf(SHEET.speak) >= 0 ? '\n灰色の行は入力の見本です（回が「例」なので出題されません）。' : '')
     : 'すべてのシートはすでにあります。') + folderMsg);
 }
 
@@ -321,8 +347,8 @@ function issueCodes() {
 /* ===================== ウェブページ ===================== */
 
 function doGet() {
-  // スピーキングを使うクラス（「スピーキング」シートがある）では、この画面ではマイクが使えないので、アプリへの案内だけを出す
-  if (sheet_(SHEET.speak)) return appGuide_();
+  // スピーキング・並べ替えを使うクラス（そのシートがある）では、この画面では受けられないので、アプリへの案内だけを出す
+  if (sheet_(SHEET.speak) || sheet_(SHEET.order)) return appGuide_();
   var t = HtmlService.createTemplateFromFile('Index');
   t.course = readSettings_().course;
   return t.evaluate()
@@ -340,7 +366,7 @@ function appGuide_() {
     'h1{font-size:1.2rem;margin:0 0 12px}p{margin:0 0 16px;color:#56625F}' +
     'a.b{display:inline-block;background:#16705E;color:#fff;font-weight:700;text-decoration:none;border-radius:6px;padding:12px 24px}' +
     '</style></head><body><div class="c"><h1>' + h(s.course) + ' 単語テスト</h1>' +
-    '<p>テストはアプリで受けてください。<br>スピーキング（録音）はこの画面ではできません。</p>' +
+    '<p>テストはアプリで受けてください。' + (sheet_(SHEET.speak) ? '<br>スピーキング（録音）はこの画面ではできません。' : '') + '</p>' +
     (url ? '<a class="b" href="' + h(url) + '" target="_top">アプリを開く</a>'
          : '<p>先生から届いたアプリのURLを開いてください。</p>') +
     '</div></body></html>';
@@ -359,7 +385,7 @@ function doPost(e) {
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var fn = Object.prototype.hasOwnProperty.call(API, req.fn) ? API[req.fn] : null;
-    out = fn ? fn.apply(null, Array.isArray(req.args) ? req.args.slice(0, 8) : [])
+    out = fn ? fn.apply(null, Array.isArray(req.args) ? req.args.slice(0, 9) : [])
              : fail_('不明な呼び出しです。');
   } catch (err) {
     console.error(err);
@@ -392,13 +418,14 @@ function api_status(code) {
   var nReading = 0;
   if (s.round) readingFor_(st.code, s.round).forEach(function (p) { nReading += p.questions.length; });
   var nCloze = s.round ? clozeFor_(st.code, s.round).length : 0;
+  var nOrder = s.round ? orderFor_(st.code, s.round).length : 0;
   var nListen = s.round ? listenFor_(st.code, s.round).length : 0;
   var nSpeak = s.round ? speakFor_(st.code, s.round).length : 0;
   return {
     ok: true, course: s.course, name: st.name, round: s.round, open: s.open,
     submitted: history.some(function (h) { return h.round === s.round; }),
-    count: nWords + nCloze + nListen + nReading + nSpeak, countWords: nWords, countCloze: nCloze, countListen: nListen, countReading: nReading,
-    countSpeak: nSpeak,
+    count: nWords + nCloze + nOrder + nListen + nReading + nSpeak, countWords: nWords, countCloze: nCloze, countOrder: nOrder,
+    countListen: nListen, countReading: nReading, countSpeak: nSpeak,
     labels: s.labels, history: history
   };
 }
@@ -422,15 +449,17 @@ function api_start(code, opts) {
   var list = wordsFor_(as, round, pool);
   var reading = readingFor_(as, round);
   var cloze = clozeFor_(as, round);
+  var order = orderFor_(as, round);
   var listen = listenFor_(as, round);
   var speak = speakFor_(as, round);
-  if (!list.length && !reading.length && !cloze.length && !listen.length && !speak.length) return fail_('第' + round + '回の問題はまだ設定されていません。');
+  if (!list.length && !reading.length && !cloze.length && !order.length && !listen.length && !speak.length) return fail_('第' + round + '回の問題はまだ設定されていません。');
   var sr = Object.assign({}, s, { round: round });
   var audio = loadAudio_(s.audioFolder, listen.map(function (q) { return q.file; }));
   return {
     ok: true, round: round, preview: pv, labels: s.labels,
     questions: list.length ? buildQuestions_(list, pool, sr) : [],
     cloze: cloze.map(function (q) { return { text: q.text, options: q.options }; }),
+    order: order.map(function (q) { return { options: q.options }; }),
     listen: listen.map(function (q) { return audioOut_({ text: q.text, options: q.options }, audio[q.file], pv); }),
     reading: reading.map(function (p) {
       return { pid: p.pid, title: p.title, text: p.text, notes: p.notes,
@@ -442,17 +471,19 @@ function api_start(code, opts) {
 
 /**
  * 提出：サーバー側で採点し、記録する。同じ回の2回目以降は受け付けない。プレビューは採点だけして記録しない。
- * スピーキングの録音（speakAnswers: [{i: 課題の番号, mime, data: base64}]）はドライブに保存し、評価は先生が後で書き込む
+ * スピーキングの録音（speakAnswers: [{i: 課題の番号, mime, data: base64}]）はドライブに保存し、評価は先生が後で書き込む。
+ * 並べ替え（orderAnswers: [{i: 問題の番号, choice: 選んだ文}]）は後から足した引数。古い画面からは届かない（未回答になる）
  */
-function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers) {
+function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers, orderAnswers) {
   var s0 = readSettings_();
   if (isPreview_(code, s0)) {
     var r = normRound_(round), as = previewAs_(opts);
-    var g = grade_(wordsFor_(as, r), readingFor_(as, r), answers, readingAnswers, clozeFor_(as, r), clozeAnswers, listenFor_(as, r), listenAnswers);
+    var g = grade_(wordsFor_(as, r), readingFor_(as, r), answers, readingAnswers, clozeFor_(as, r), clozeAnswers, listenFor_(as, r), listenAnswers,
+      orderFor_(as, r), orderAnswers);
     var pspeak = speakFor_(as, r), precs = recordingsFor_(pspeak, speakAnswers);
     if (typeof precs === 'string') return fail_(precs);
     var res = { round: r, date: fmtDate_(new Date()), correct: g.correct, total: g.total, items: g.items, reading: g.reading,
-      cloze: g.cloze, listen: listenOut_(g.listen), speak: speakOut_(pspeak, precs, s0, true), labels: s0.labels, preview: true };
+      cloze: g.cloze, order: g.order, listen: listenOut_(g.listen), speak: speakOut_(pspeak, precs, s0, true), labels: s0.labels, preview: true };
     return { ok: true, result: res };
   }
   var lock = LockService.getScriptLock();
@@ -468,13 +499,13 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
 
     var now = new Date();
     var list = wordsFor_(st.code, s.round), reading = readingFor_(st.code, s.round), cloze = clozeFor_(st.code, s.round);
-    var listen = listenFor_(st.code, s.round), speak = speakFor_(st.code, s.round);
+    var listen = listenFor_(st.code, s.round), speak = speakFor_(st.code, s.round), order = orderFor_(st.code, s.round);
     var recs = recordingsFor_(speak, speakAnswers);
     if (typeof recs === 'string') return fail_(recs);
     var urls; // 録音を先に保存する。保存できなければ何も記録せず、もう一度提出してもらう
     try { urls = saveRecordings_(s, st, recs); }
     catch (e) { console.error(e); return fail_('録音を保存できませんでした。少し待ってから、もう一度「提出する」を押してください。'); }
-    var g2 = grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers);
+    var g2 = grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers);
     var head = [now, s.round, st.code, st.name];
     if (list.length) {
       writeRows_(SHEET.subs, HEAD.subs, [head.concat([g2.vCorrect, list.length, g2.vCorrect / list.length])]);
@@ -498,6 +529,13 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
         return head.concat([safeCell_(q.text), safeCell_(q.answer), q.choice ? safeCell_(q.choice) : UNANSWERED, q.ok ? '○' : '×']);
       }));
     }
+    if (order.length) {
+      writeRows_(SHEET.osubs, HEAD.osubs, [head.concat([g2.oCorrect, order.length, g2.oCorrect / order.length])]);
+      writeRows_(SHEET.odetail, HEAD.odetail, g2.order.map(function (q) {
+        return head.concat([safeCell_(numbered_(q.options).join('\n')), numbered_(q.options)[q.answer],
+          q.choice >= 0 ? numbered_(q.options)[q.choice] : UNANSWERED, q.ok ? '○' : '×']);
+      }));
+    }
     if (listen.length) {
       writeRows_(SHEET.lsubs, HEAD.lsubs, [head.concat([g2.lCorrect, listen.length, g2.lCorrect / listen.length])]);
       writeRows_(SHEET.ldetail, HEAD.ldetail, g2.listen.map(function (q) {
@@ -511,14 +549,14 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
     }
     SpreadsheetApp.flush();
     return { ok: true, result: { round: s.round, date: fmtDate_(now), correct: g2.correct, total: g2.total, items: g2.items, reading: g2.reading,
-      cloze: g2.cloze, listen: listenOut_(g2.listen), speak: speakOut_(speak, recs, s, false), labels: s.labels } };
+      cloze: g2.cloze, order: g2.order, listen: listenOut_(g2.listen), speak: speakOut_(speak, recs, s, false), labels: s.labels } };
   } finally {
     lock.releaseLock();
   }
 }
 
-/** 単語・読解・穴埋めを採点する（記録はしない） */
-function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers) {
+/** 単語・読解・穴埋め・聴解・並べ替えを採点する（記録はしない） */
+function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers) {
   var ans = Array.isArray(answers) ? answers.slice(0, 500) : [];
   var vCorrect = 0;
   var items = list.map(function (w) {
@@ -582,8 +620,23 @@ function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, lis
     if (ok) lCorrect++;
     return { file: q.file, text: q.text, answer: answer, choice: choice, ok: ok, note: q.note };
   });
-  return { items: items, reading: rres, cloze: cres, listen: lres, vCorrect: vCorrect, rCorrect: rCorrect, rTotal: rTotal, cCorrect: cCorrect, lCorrect: lCorrect,
-    correct: vCorrect + rCorrect + cCorrect + lCorrect, total: list.length + rTotal + cres.length + lres.length };
+  // 並べ替えも出題順の番号（i）で対応させ、選んだ文がどれかで採点する（choice は選んだ文の番号。選んでいなければ -1）
+  var oans = Array.isArray(orderAnswers) ? orderAnswers.slice(0, 500) : [];
+  var oCorrect = 0;
+  var ores = (order || []).map(function (q, i) {
+    var a = null;
+    for (var k = 0; k < oans.length; k++) {
+      var x = oans[k];
+      if (x && typeof x === 'object' && Number(x.i) === i) { a = x; break; }
+    }
+    var choice = a ? q.options.indexOf(norm_(a.choice).slice(0, 500)) : -1;
+    var ok = choice === q.answer;
+    if (ok) oCorrect++;
+    return { options: q.options, answer: q.answer, choice: choice, ok: ok, note: q.note };
+  });
+  return { items: items, reading: rres, cloze: cres, listen: lres, order: ores, vCorrect: vCorrect, rCorrect: rCorrect, rTotal: rTotal,
+    cCorrect: cCorrect, lCorrect: lCorrect, oCorrect: oCorrect,
+    correct: vCorrect + rCorrect + cCorrect + lCorrect + oCorrect, total: list.length + rTotal + cres.length + lres.length + ores.length };
 }
 
 /** プレビュー用のホーム情報：問題が登録されている回と、学生の一覧 */
@@ -592,6 +645,7 @@ function previewStatus_(s) {
   allWords_().forEach(function (w) { if (w.round) rounds[w.round] = true; });
   rows_(SHEET.rtext, HEAD.rtext.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   rows_(SHEET.cloze, HEAD.cloze.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
+  rows_(SHEET.order, HEAD.order.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   rows_(SHEET.listen, HEAD.listen.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   rows_(SHEET.speak, HEAD.speak.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   var list = Object.keys(rounds).sort(function (a, b) { return (Number(a) - Number(b)) || a.localeCompare(b); });
@@ -650,6 +704,17 @@ function api_result(code, round) {
     var t = unCell_(x[4]), c = norm_(x[6]);
     return { text: t, answer: unCell_(x[5]), choice: c === UNANSWERED ? '' : unCell_(c), ok: norm_(x[7]) === '○', note: notes[pinyinText_(t)] || '' };
   });
+  // 並べ替え：記録した文から選択肢を戻し、解説は「並べ替え」シートの現在の内容を添える
+  var onotes = {};
+  rows_(SHEET.order, HEAD.order.length).forEach(function (x) {
+    var k = orderRow_(x).options.join('\n');
+    if (k && !(k in onotes)) onotes[k] = pinyinText_(x[7]);
+  });
+  var order = rows_(SHEET.odetail, HEAD.odetail.length).filter(mine).map(function (x) {
+    var options = unCell_(x[4]).split('\n').map(function (l) { return l.replace(/^[①②③④]\s*/, ''); });
+    var num = function (v) { return MARUNUM.indexOf(norm_(v).charAt(0)); };
+    return { options: options, answer: num(x[5]), choice: num(x[6]), ok: norm_(x[7]) === '○', note: onotes[options.join('\n')] || '' };
+  });
   // 聴解：解説は「聴解」シートの現在の内容、音声はフォルダから読み直して添える
   var lnotes = {};
   rows_(SHEET.listen, HEAD.listen.length).forEach(function (x) {
@@ -679,7 +744,7 @@ function api_result(code, round) {
     return modelOut_(o, info.model, saudio, false);
   });
   return { ok: true, result: { round: r, date: fmtDate_(last), correct: correct, total: total, items: items, reading: reading,
-    cloze: cloze, listen: listen, speak: speak, labels: s.labels } };
+    cloze: cloze, order: order, listen: listen, speak: speak, labels: s.labels } };
 }
 
 /* ===================== 内部処理 ===================== */
@@ -834,7 +899,7 @@ function readSettings_() {
     audioFolder: norm_(map['音声フォルダ']),
     recFolder: norm_(map['録音フォルダ']),
     appUrl: norm_(map['アプリのURL']),
-    labels: { cloze: norm_(map['穴埋めの見出し']) || '穴埋め', listen: norm_(map['聴解の見出し']) || '聴解',
+    labels: { cloze: norm_(map['穴埋めの見出し']) || '穴埋め', order: norm_(map['並べ替えの見出し']) || '並べ替え', listen: norm_(map['聴解の見出し']) || '聴解',
       speak: norm_(map['スピーキングの見出し']) || 'スピーキング' }
   };
 }
@@ -897,6 +962,33 @@ function clozeFor_(code, round) {
   });
   return out;
 }
+/** その学生のその回の並べ替え問題（2〜4つの文と、正しくない文の番号）。番号が空の文を指す行は出題しない */
+function orderFor_(code, round) {
+  var seen = {}, out = [];
+  rows_(SHEET.order, HEAD.order.length).forEach(function (r) {
+    if (normRound_(r[0]) !== round || !forCode_(norm_(r[1]), code)) return;
+    var q = orderRow_(r), key = q.options.join('\n');
+    if (q.options.length < 2 || q.answer < 0 || seen[key]) return;
+    seen[key] = true;
+    out.push(q);
+  });
+  return out;
+}
+/** 「並べ替え」シートの1行 → { options: 書いてある文, answer: 正しくない文の位置（なければ -1）, note } */
+function orderRow_(r) {
+  var options = [], answer = -1;
+  var n = norm_(r[6]).normalize('NFKC').toUpperCase(); // ①→1、全角の１→1。A〜D でも受け付ける
+  var pick = LETTERS.indexOf(n) >= 0 ? LETTERS.indexOf(n) : Number(n) - 1;
+  for (var i = 0; i < 4; i++) {
+    var o = pinyinText_(r[2 + i]);
+    if (!o) continue;
+    if (i === pick) answer = options.length;
+    options.push(o);
+  }
+  return { options: options, answer: answer, note: pinyinText_(r[7]) };
+}
+/** 文に①〜④をつける（記録用） */
+function numbered_(options) { return options.map(function (o, i) { return MARUNUM[i] + ' ' + o; }); }
 /** その学生のその回の聴解問題（音声ファイル名・選択肢・正解）。選択肢の拼音は数字表記も声調記号に直す */
 function listenFor_(code, round) {
   var seen = {}, out = [];

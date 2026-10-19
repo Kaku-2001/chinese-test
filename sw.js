@@ -3,7 +3,7 @@
  * テストの問題・提出・結果の通信（Apps Scriptへの POST）には一切関わりません。
  * 画面は毎回ネットから最新を取りに行き、つながらないときだけ保存したものを使います。
  */
-var CACHE = 'vocab-test-v2';
+var CACHE = 'vocab-test-v3';
 var SHELL = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',

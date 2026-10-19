@@ -25,7 +25,7 @@
   KK さんが本番に貼ったら同じ内容をここにもコミットします。ここが本番とずれると、貼り付けで
   本番の機能（穴埋め・聴解など）を消してしまいます。
 - `index.html` が送る引数と Code.gs の受け取る引数は対応しています
-  （例: `api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers)`）。
+  （例: `api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers, orderAnswers)`）。
   片方だけ変えるときは、もう片方が古いままでも壊れないようにします。
 
 ## 確認のしかた

@@ -206,4 +206,46 @@ assert.deepStrictEqual(counts('ghi890'), [5, 2, 2, 2, 1]);
 t = gs.call('api_start', PREVIEW, { round: '1', as: 'def567' });
 assert.ok(t.ok && t.questions.length === 6 && t.cloze.length === 3 && t.listen.length === 1, JSON.stringify(t)); // プレビューで学生を選んだときも同じ
 
+// 7) 並べ替え：4つの文から正しくないものを1つ選ぶ
+tb = tables();
+tb['並べ替え'] = [['回', 'コード', '文①', '文②', '文③', '文④', '正しくない文', '解説'],
+  ['例', '全員', '见本1', '见本2', '', '', 1, ''],
+  [1, '全員', '我把作业写完了。', '我把写完作业了。', '作业我写完了。', '我写完作业了。', 2, '「把」の語順'],
+  [1, '全員', '我在图书馆看书。', '我看书在图书馆。', '', '我昨天在图书馆看书了。', '②', ''],
+  [1, '全員', '正解の番号がない', 'b', '', '', '', ''],
+  [1, 'zzz999', 'ほかの学生だけ', 'b', '', '', 1, '']];
+gs = sim.load(tb);
+assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('例') >= 0);
+st = gs.call('api_status', STUDENT);
+assert.ok(st.ok && st.countOrder === 2 && st.count === 4 + 2 + 2 + 1 + 2, JSON.stringify(st));
+t = gs.call('api_start', STUDENT);
+assert.deepStrictEqual(t.order, [{ options: ['我把作业写完了。', '我把写完作业了。', '作业我写完了。', '我写完作业了。'] },
+  { options: ['我在图书馆看书。', '我看书在图书馆。', '我昨天在图书馆看书了。'] }]); // 空の文③は飛ばし、正解は送らない
+a = answersFor(t);
+var oa = [{ i: 0, choice: '我把写完作业了。' }, { i: 1, choice: '我在图书馆看书。' }];
+r = gs.call('api_submit', PREVIEW, '1', a[0], a[1], { round: '1' }, a[2], a[3], [], oa);
+assert.ok(r.ok && r.result.preview, JSON.stringify(r));
+assert.deepStrictEqual(r.result.order.map(function (q) { return [q.ok, q.answer, q.choice]; }), [[true, 1, 1], [false, 1, 0]]);
+assert.ok(!gs.sheets['並べ替え提出'] || gs.sheets['並べ替え提出'].length <= 1);
+// 古い画面（並べ替えの答えを送らない）からの提出は、並べ替えが未回答になる
+r = gs.call('api_submit', PREVIEW, '1', a[0], a[1], { round: '1' }, a[2], a[3], []);
+assert.deepStrictEqual(r.result.order.map(function (q) { return [q.ok, q.choice]; }), [[false, -1], [false, -1]]);
+r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3], [], [oa[0]]);
+assert.ok(r.ok, JSON.stringify(r));
+var od = gs.sheets['並べ替え明細'];
+assert.strictEqual(od.length, 3);
+assert.deepStrictEqual(od[1].slice(4), ['① 我把作业写完了。\n② 我把写完作业了。\n③ 作业我写完了。\n④ 我写完作业了。', '② 我把写完作业了。', '② 我把写完作业了。', '○']);
+assert.deepStrictEqual(od[2].slice(5), ['② 我看书在图书馆。', '（未回答）', '×']);
+assert.deepStrictEqual(gs.sheets['並べ替え提出'][1].slice(4, 6), [1, 2]);
+res = gs.call('api_result', STUDENT, '1');
+assert.ok(res.ok, JSON.stringify(res));
+assert.deepStrictEqual(res.result.order, [
+  { options: ['我把作业写完了。', '我把写完作业了。', '作业我写完了。', '我写完作业了。'], answer: 1, choice: 1, ok: true, note: '「把」の語順' },
+  { options: ['我在图书馆看书。', '我看书在图书馆。', '我昨天在图书馆看书了。'], answer: 1, choice: -1, ok: false, note: '' }]);
+assert.strictEqual(res.result.total, 4 + 2 + 2 + 1 + 2);
+assert.ok(gs.call('api_status', STUDENT).submitted);
+// 並べ替えのシートがあるクラスでも、前の画面はアプリへの案内だけ（録音の文は出さない）
+g = gs.ctx.doGet().html;
+assert.ok(/テストはアプリで受けてください/.test(g) && !/スピーキング/.test(g), g);
+
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');

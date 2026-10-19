@@ -113,6 +113,12 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .rq-text{margin:0;font-family:var(--f-zh);font-size:1.04rem;font-weight:500;line-height:1.7}
 .opt .key{flex:none;font-weight:700;font-size:.8rem;color:var(--sub);border:1px solid var(--line-strong);border-radius:4px;width:1.5rem;text-align:center;line-height:1.5}
 .opt .zt{font-family:var(--f-zh)}
+.opt .num{flex:none;font-weight:700;color:var(--sub)}
+.q-head .neg{color:var(--ng)}
+.ritems .ol{display:grid;gap:2px;font-family:var(--f-zh)}
+.ritems .ol .num{color:var(--sub);margin-right:.4em}
+.ritems .ol .wrong-s{color:var(--ng);font-weight:700}
+.ritems .ol .tag{margin-left:.5em;font-size:.75rem;font-family:var(--f-ja);border:1px solid currentColor;border-radius:4px;padding:0 4px;white-space:nowrap}
 .ritems{list-style:none;margin:0;padding:0;display:grid}
 .ritems li{display:grid;grid-template-columns:1.6rem minmax(0,1fr);gap:2px 10px;padding:10px 0;border-top:1px solid var(--line)}
 .ritems li:first-child{border-top:0}
@@ -321,11 +327,12 @@ details.reread .p-text{margin-top:10px}
       var lb = labels(st), parts = [];
       if (st.countWords) parts.push('単語' + st.countWords);
       if (st.countCloze) parts.push(lb.cloze + st.countCloze);
+      if (st.countOrder) parts.push(lb.order + st.countOrder);
       if (st.countListen) parts.push(lb.listen + st.countListen);
       if (st.countReading) parts.push('読解' + st.countReading);
       if (st.countSpeak) parts.push(lb.speak + st.countSpeak);
       var kinds = parts.length > 1 ? '（' + parts.join('・') + '）'
-                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countListen ? '（' + lb.listen + '）'
+                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countOrder ? '（' + lb.order + '）' : st.countListen ? '（' + lb.listen + '）'
                 : st.countSpeak ? '（' + lb.speak + '）' : '';
       h += '<div class="state"><span class="dot go"></span>第' + esc(st.round) + '回　全' + st.count + '問' + kinds + '</div>';
       h += '<p class="muted">提出できるのは1回だけです。すべて答えてから提出してください。</p>';
@@ -383,7 +390,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code, opts).then(function(res){
       if (!res.ok){ renderPreviewHome(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'この内容で受けてみる'; alertInline(netError()); });
   }
 
@@ -392,7 +399,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code).then(function(res){
       if (!res.ok){ loadHomeWith(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'テストを受ける'; alertInline(netError()); });
   }
   function loadHomeWith(msg){
@@ -403,13 +410,13 @@ details.reread .p-text{margin-top:10px}
     app.insertBefore(p, app.firstChild);
   }
   function totalCount(){
-    var n = S.test.questions.length + S.test.cloze.length + S.test.listen.length + S.test.speak.length;
+    var n = S.test.questions.length + S.test.cloze.length + S.test.order.length + S.test.listen.length + S.test.speak.length;
     S.test.reading.forEach(function(p){ n += p.questions.length; });
     return n;
   }
   function renderTest(){
     var t = S.test, h = '', no = 0, lb = labels(t);
-    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) + (t.speak.length ? 1 : 0) > 1;
+    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.order.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) + (t.speak.length ? 1 : 0) > 1;
     stopAudio(); S.audioSrc = {};
     S.groups = [];
     if (t.preview) h += '<p class="pv-banner">プレビュー中：第' + esc(t.round) + '回／' + esc(S.pvLabel || '') + '。提出しても記録は残りません。</p>';
@@ -437,6 +444,20 @@ details.reread .p-text{margin-top:10px}
       h += '<div class="q-head"><b>問' + no + '</b><span>' + (hasBlank(q.text) ? '空欄に入るものを選ぶ' : '正しいものを選ぶ') + '</span></div>';
       h += '<p class="cz-text" lang="zh-CN">' + clozeHtml(q.text) + '</p>';
       h += keyedOpts(g, no, q.options) + '</section>';
+    });
+    if (t.order.length && multi) h += '<h2 class="sec-title">' + esc(lb.order) + '</h2>';
+    t.order.forEach(function(q, i){
+      var g = 'o' + i;
+      no++; S.groups.push(g);
+      h += '<section class="q" id="' + g + '">';
+      h += '<div class="q-head"><b>問' + no + '</b><span><b class="neg">正しくないもの</b>を1つ選ぶ</span></div>';
+      h += '<div class="opts" role="radiogroup" aria-label="問' + no + 'の選択肢">';
+      q.options.forEach(function(o, j){
+        var id = g + 'o' + j;
+        h += '<label class="opt" for="' + id + '"><input type="radio" id="' + id + '" name="' + g + '" value="' + j + '">' +
+             '<span class="num">' + NUMS.charAt(j) + '</span><span class="zt" lang="zh-CN">' + esc(o) + '</span></label>';
+      });
+      h += '</div></section>';
     });
     if (t.listen.length && multi) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
     t.listen.forEach(function(q, i){
@@ -477,7 +498,8 @@ details.reread .p-text{margin-top:10px}
     renderBar();
     scrollTop();
   }
-  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', listen: l.listen || '聴解', speak: l.speak || 'スピーキング' }; }
+  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', order: l.order || '並べ替え', listen: l.listen || '聴解', speak: l.speak || 'スピーキング' }; }
+  var NUMS = '①②③④';
 
   /* ---------- 録音（スピーキング） ---------- */
   // S.rec[i] = { blob, url, mime, sec }。録音中は REC に入れる。提出するまで端末の中だけにある
@@ -695,11 +717,15 @@ details.reread .p-text{margin-top:10px}
       var v = S.answers['c' + i];
       return { text: q.text, choice: v != null ? q.options[v] : '' };
     });
+    var oAnswers = S.test.order.map(function(q, i){
+      var v = S.answers['o' + i];
+      return { i: i, choice: v != null ? q.options[v] : '' };
+    });
     var lAnswers = S.test.listen.map(function(q, i){
       var v = S.answers['l' + i];
       return { i: i, choice: v != null ? q.options[v] : '' };
     });
-    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers, sAnswers).then(function(res){
+    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers, sAnswers, oAnswers).then(function(res){
       if (!res.ok){
         if (S.test.speak.length && /録音/.test(res.error || '')){ // 録音の問題なら、テストの画面のまま録り直せるようにする
           btn.disabled = false; btn.textContent = '提出する';
@@ -726,7 +752,7 @@ details.reread .p-text{margin-top:10px}
     }, function(){ if (btn) btn.disabled = false; alertInline(netError()); });
   }
   function renderResult(r, justSubmitted){
-    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
+    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
     stopAudio(); S.audioSrc = {};
     var h = '<section class="card">';
     if (r.preview) h += '<p class="pv-banner">プレビューの結果です（記録はされていません）。</p>';
@@ -734,7 +760,7 @@ details.reread .p-text{margin-top:10px}
     h += '<div class="score">' + (r.total ? '<span class="big">' + r.correct + ' / ' + r.total + '</span>' : '') + '<span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
     if (speak.length && r.total) h += '<p class="muted">' + esc(lb.speak) + 'は先生が採点します（この点数には入りません）。</p>';
     if (items.length){
-      if (reading.length || cloze.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
+      if (reading.length || cloze.length || order.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
       h += '<ul class="items">';
       items.forEach(function(x){
         h += '<li><span class="m ' + (x.ok ? 'ok' : 'ng') + '" aria-label="' + (x.ok ? '正解' : '不正解') + '">' + (x.ok ? '○' : '×') + '</span>' +
@@ -745,7 +771,7 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     if (cloze.length){
-      if (items.length || reading.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
+      if (items.length || reading.length || order.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
       h += '<ul class="ritems">';
       cloze.forEach(function(q){
         var blank = hasBlank(q.text);
@@ -757,8 +783,22 @@ details.reread .p-text{margin-top:10px}
       });
       h += '</ul>';
     }
+    if (order.length){
+      if (items.length || reading.length || cloze.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.order) + '</h2>';
+      h += '<ul class="ritems">';
+      order.forEach(function(q){
+        h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
+             '<span class="ol">' + q.options.map(function(o, j){
+               return '<span' + (j === q.answer ? ' class="wrong-s"' : '') + '><span class="num">' + NUMS.charAt(j) + '</span><span lang="zh-CN">' + esc(o) + '</span>' +
+                 (j === q.answer ? '<span class="tag">正しくない文</span>' : '') + '</span>';
+             }).join('') + '</span>' +
+             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice >= 0 ? NUMS.charAt(q.choice) : '未回答') + '</span>') +
+             (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
+      });
+      h += '</ul>';
+    }
     if (listen.length){
-      if (items.length || reading.length || cloze.length) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
+      if (items.length || reading.length || cloze.length || order.length) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
       h += '<ul class="ritems">';
       listen.forEach(function(q, i){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
@@ -811,7 +851,7 @@ details.reread .p-text{margin-top:10px}
   /* ---------- イベント ---------- */
   document.addEventListener('change', function(e){
     var g = e.target.name;
-    if (!g || !/^(q\d+|c\d+|l\d+|r\d+_\d+)$/.test(g) || !S.test) return;
+    if (!g || !/^(q\d+|c\d+|o\d+|l\d+|r\d+_\d+)$/.test(g) || !S.test) return;
     S.answers[g] = Number(e.target.value);
     var sec = document.getElementById(g); if (sec) sec.classList.remove('unanswered');
     if (!bar.querySelector('#confirmBtn')) renderBar();
