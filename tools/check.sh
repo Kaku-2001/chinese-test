@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 変更を push する前の確認。何も記録しません。
 #   1) config.js・sw.js・index.html の中のスクリプト・apps-script/*.gs の文法チェック
-#   2) config.js の3クラスの Apps Script が応答するか（存在しないコードで api_status を呼ぶだけ）
-# 使い方: bash tools/check.sh          （2 を飛ばすときは OFFLINE=1）
+#   2) apps-script/Code.gs を手元のシミュレーターで動かす確認（tools/test-gas.js）
+#   3) config.js の3クラスの Apps Script が応答するか（存在しないコードで api_status を呼ぶだけ）
+# 使い方: bash tools/check.sh          （3 を飛ばすときは OFFLINE=1）
 set -u
 cd "$(dirname "$0")/.."
 fail=0
@@ -27,6 +28,11 @@ while ((m = re.exec(html))) {
 if (!bad) console.log("OK   index.html (" + i + " scripts)");
 process.exit(bad ? 1 : 0);
 ' || fail=1
+
+# apps-script/Code.gs を手元で動かして、受験・提出・結果の流れを確かめる（本物のシートには触らない）
+if [ -f apps-script/Code.gs ]; then
+  node tools/test-gas.js || fail=1
+fi
 
 if [ "${OFFLINE:-0}" != 1 ]; then
   node -e 'global.window = {}; eval(require("fs").readFileSync("config.js", "utf8"));
