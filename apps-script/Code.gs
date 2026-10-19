@@ -546,7 +546,7 @@ function api_result(code, round) {
   var texts = {};
   rows_(SHEET.rtext, HEAD.rtext.length).forEach(function (x) {
     var pid = norm_(x[2]);
-    if (pid && !texts[pid]) texts[pid] = { title: norm_(x[3]), text: norm_(x[4]), notes: splitNotes_(x[5]) };
+    if (pid && !texts[pid]) texts[pid] = { title: pinyinText_(x[3]), text: pinyinText_(x[4]), notes: splitNotes_(x[5]) };
   });
   var reading = [], byPid = {};
   rows_(SHEET.rdetail, HEAD.rdetail.length).filter(mine).forEach(function (x) {
@@ -687,6 +687,17 @@ function numToMark_(s) {
     if (syl.charAt(idx) !== lower.charAt(idx)) marked = marked.toUpperCase();
     return syl.slice(0, idx) + marked + syl.slice(idx + 1);
   });
+}
+
+/** 本文・語注・設問の中にある数字つき拼音（qu4pi2, xie4xie）だけを声調記号つきに直す。A4・mp3・iPhone15 などはそのまま */
+function pinyinText_(v) {
+  return norm_(v).replace(/(?:[uU]:|[A-Za-zÜü])+[1-5](?:(?:[uU]:|[A-Za-zÜü])+[1-5]?)*/g, function (m, i, all) {
+    if (/[A-Za-z0-9]/.test(all.charAt(i - 1)) || /[A-Za-z0-9]/.test(all.charAt(i + m.length))) return m;
+    var syls = m.match(/(?:[uU]:|[A-Za-zÜü])+[1-5]?/g);
+    if (syls.length === 1 && m === m.toUpperCase()) return m; // A4・B2 など
+    if (!syls.every(function (s) { return /[aeiouvüAEIOUVÜ]/.test(s); })) return m;
+    return numToMark_(m);
+  }).normalize('NFC');
 }
 
 /** 比較用のキー。拼音は大文字小文字・空白・隔音符号の違いを無視する */
@@ -930,11 +941,11 @@ function unCell_(v) { var s = norm_(v); return /^'[=+\-@]/.test(s) ? s.slice(1) 
 function readingFor_(code, round) {
   var qs = {};
   rows_(SHEET.rq, HEAD.rq.length).forEach(function (r) {
-    var pid = norm_(r[0]), text = norm_(r[1]);
+    var pid = norm_(r[0]), text = pinyinText_(r[1]);
     if (!pid || !text) return;
     var options = [], answer = -1, letter = norm_(r[6]).normalize('NFKC').toUpperCase();
     for (var i = 0; i < LETTERS.length; i++) {
-      var o = norm_(r[2 + i]);
+      var o = pinyinText_(r[2 + i]);
       if (!o) continue;
       if (LETTERS[i] === letter) answer = options.length;
       options.push(o);
@@ -950,12 +961,12 @@ function readingFor_(code, round) {
     if (!(c === ALL || normCode_(c) === code)) return;
     if (!norm_(r[4]) || !qs[pid]) return;
     seen[pid] = true;
-    out.push({ pid: pid, title: norm_(r[3]), text: norm_(r[4]), notes: splitNotes_(r[5]), questions: qs[pid] });
+    out.push({ pid: pid, title: pinyinText_(r[3]), text: pinyinText_(r[4]), notes: splitNotes_(r[5]), questions: qs[pid] });
   });
   return out;
 }
 function splitNotes_(v) {
-  return norm_(v).split(/\r?\n/).map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+  return norm_(v).split(/\r?\n/).map(function (x) { return pinyinText_(x); }).filter(function (x) { return x; });
 }
 function ensureSheet_(name, head) {
   var sh = sheet_(name);
