@@ -559,12 +559,12 @@ function api_result(code, round) {
     var c = norm_(x[7]);
     byPid[pid].questions.push({ text: norm_(x[5]), answer: norm_(x[6]), choice: c === UNANSWERED ? '' : c, ok: norm_(x[8]) === '○' });
   });
-  // 穴埋め：解説は「穴埋め」シートの現在の内容を添える
+  // 穴埋め：解説は「穴埋め」シートの現在の内容を添える（拼音を直す前に記録した行でも見つかるよう、変換してから照らし合わせる）
   var notes = {};
-  rows_(SHEET.cloze, HEAD.cloze.length).forEach(function (x) { var t = norm_(x[2]); if (t && !(t in notes)) notes[t] = norm_(x[8]); });
+  rows_(SHEET.cloze, HEAD.cloze.length).forEach(function (x) { var t = pinyinText_(x[2]); if (t && !(t in notes)) notes[t] = pinyinText_(x[8]); });
   var cloze = rows_(SHEET.cdetail, HEAD.cdetail.length).filter(mine).map(function (x) {
     var t = unCell_(x[4]), c = norm_(x[6]);
-    return { text: t, answer: unCell_(x[5]), choice: c === UNANSWERED ? '' : unCell_(c), ok: norm_(x[7]) === '○', note: notes[t] || '' };
+    return { text: t, answer: unCell_(x[5]), choice: c === UNANSWERED ? '' : unCell_(c), ok: norm_(x[7]) === '○', note: notes[pinyinText_(t)] || '' };
   });
   // 聴解：解説は「聴解」シートの現在の内容、音声はフォルダから読み直して添える
   var lnotes = {};
@@ -689,7 +689,7 @@ function numToMark_(s) {
   });
 }
 
-/** 本文・語注・設問の中にある数字つき拼音（qu4pi2, xie4xie）だけを声調記号つきに直す。A4・mp3・iPhone15 などはそのまま */
+/** 読解・穴埋めの文の中にある数字つき拼音（qu4pi2, xie4xie）だけを声調記号つきに直す。A4・mp3・iPhone15 などはそのまま */
 function pinyinText_(v) {
   return norm_(v).replace(/(?:[uU]:|[A-Za-zÜü])+[1-5](?:(?:[uU]:|[A-Za-zÜü])+[1-5]?)*/g, function (m, i, all) {
     if (/[A-Za-z0-9]/.test(all.charAt(i - 1)) || /[A-Za-z0-9]/.test(all.charAt(i + m.length))) return m;
@@ -776,25 +776,25 @@ function hasSubmitted_(code, round) {
   });
 }
 
-/** その学生のその回の穴埋め問題。選択肢が2つ未満、または正解の記号が空欄を指す行は出題しない */
+/** その学生のその回の穴埋め問題。選択肢が2つ未満、または正解の記号が空欄を指す行は出題しない。問題文・選択肢・解説の数字つき拼音は声調記号に直す */
 function clozeFor_(code, round) {
   var seen = {}, out = [];
   rows_(SHEET.cloze, HEAD.cloze.length).forEach(function (r) {
     if (normRound_(r[0]) !== round) return;
     var c = norm_(r[1]);
     if (!(c === ALL || normCode_(c) === code)) return;
-    var text = norm_(r[2]);
+    var text = pinyinText_(r[2]);
     if (!text || seen[text]) return;
     var options = [], answer = -1, letter = norm_(r[7]).normalize('NFKC').toUpperCase();
     for (var i = 0; i < LETTERS.length; i++) {
-      var o = norm_(r[3 + i]);
+      var o = pinyinText_(r[3 + i]);
       if (!o) continue;
       if (LETTERS[i] === letter) answer = options.length;
       options.push(o);
     }
     if (options.length < 2 || answer < 0) return;
     seen[text] = true;
-    out.push({ text: text, options: options, answer: answer, note: norm_(r[8]) });
+    out.push({ text: text, options: options, answer: answer, note: pinyinText_(r[8]) });
   });
   return out;
 }
