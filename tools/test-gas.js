@@ -143,7 +143,7 @@ var files = Object.keys(gs.drive.files).map(function (k) { return gs.drive.files
 assert.strictEqual(files.length, 1);
 assert.strictEqual(files[0].name, '第1回_テスト学生_' + STUDENT + '_1.m4a');
 assert.strictEqual(Buffer.from(files[0].bytes).toString(), 'fake-recording');
-assert.strictEqual(gs.drive.folders[files[0].folder].name, '第1回');
+assert.strictEqual(gs.drive.folders[files[0].folder].name, 'テスト学生_' + STUDENT); // 学生ごとのフォルダ
 var setRow = gs.sheets['設定'].filter(function (x) { return x[0] === '録音フォルダ'; })[0];
 assert.ok(setRow && /folders\//.test(setRow[1]), '録音フォルダが「設定」に書かれていない');
 var sd = gs.sheets['スピーキング提出'];
@@ -163,6 +163,14 @@ st = gs.call('api_status', STUDENT);
 assert.ok(st.submitted && st.history[0].speak === 2, JSON.stringify(st));
 r = gs.call('api_submit', STUDENT, '1', [], [], null, [], [], [{ i: 0, mime: 'audio/mp4', data: rec }]);
 assert.ok(!r.ok && /提出済み/.test(r.error));
+// 次の回も同じ学生のフォルダに入る
+gs.sheets['設定'][2][1] = 2;
+r = gs.call('api_submit', STUDENT, '2', [], [], null, [], [], [{ i: 0, mime: 'audio/webm', data: rec }]);
+assert.ok(r.ok, JSON.stringify(r));
+var f2 = Object.keys(gs.drive.files).map(function (k) { return gs.drive.files[k]; }).filter(function (f) { return /^第2回/.test(f.name); });
+assert.strictEqual(f2.length, 1);
+assert.strictEqual(f2[0].folder, files[0].folder);
+gs.sheets['設定'][2][1] = 1;
 // スピーキングだけの回：プレビューの回の一覧に出る
 assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('2') >= 0);
 t = gs.call('api_start', PREVIEW, { round: '2' });
