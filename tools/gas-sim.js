@@ -126,6 +126,10 @@ function load(tables, opts) {
       },
       newBlob: function (bytes, mime, name) { return { bytes: bytes, mime: mime, name: name }; }
     },
+    HtmlService: {
+      createHtmlOutput: function (html) { var o = { html: html, setTitle: function () { return o; }, addMetaTag: function () { return o; } }; return o; },
+      createTemplateFromFile: function (n) { return { evaluate: function () { var o = { html: 'TEMPLATE:' + n, setTitle: function () { return o; }, addMetaTag: function () { return o; } }; return o; } }; }
+    },
     ContentService: {
       MimeType: { JSON: 'JSON' },
       createTextOutput: function (s) { return { setMimeType: function () { return this; }, getContent: function () { return s; } }; }

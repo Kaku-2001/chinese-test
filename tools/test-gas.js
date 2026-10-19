@@ -111,6 +111,9 @@ r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3]);
 assert.ok(!r.ok && /提出済み/.test(r.error), JSON.stringify(r));
 assert.strictEqual(gs.sheets['読解明細'].length, 3);
 
+// 前の画面（doGet）：スピーキングのシートがなければ、今までどおりの画面
+assert.strictEqual(gs.ctx.doGet().html, 'TEMPLATE:Index');
+
 // 6) スピーキング：指定した拼音を発音して録音し、ドライブに保存して、先生の評価を結果に出す
 var tb = tables();
 tb['スピーキング'] = [['回', 'コード', '課題', '補足', 'お手本', '秒'],
@@ -175,5 +178,32 @@ gs.sheets['設定'][2][1] = 1;
 assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('2') >= 0);
 t = gs.call('api_start', PREVIEW, { round: '2' });
 assert.ok(t.ok && t.speak.length === 1 && t.speak[0].sec === 20, JSON.stringify(t));
+
+// スピーキングのシートがあるクラスでは、前の画面はアプリへの案内だけになる
+var g = gs.ctx.doGet().html;
+assert.ok(/テストはアプリで受けてください/.test(g) && /先生から届いたアプリのURL/.test(g), g);
+gs.sheets['設定'].push(['アプリのURL', 'https://example.github.io/app/?c=x&y="1"', '']);
+g = gs.ctx.doGet().html;
+assert.ok(g.indexOf('href="https://example.github.io/app/?c=x&amp;y=&quot;1&quot;" target="_top"') >= 0, g);
+
+// 「コード」欄に何人分も書ける（「,」「、」「，」やスペースで区切る）。書いていない学生には出ない
+tb = tables();
+tb['学生'].push(['def567', '学生2', ''], ['ghi890', '学生3', '']);
+tb['語リスト'].push([1, 'ABC234, def567', '吃饭', 'chi1 fan4', 'ご飯を食べる'], [1, 'def567、ghi890', '学习', 'xue2xi2', '勉強する'],
+  [1, 'abc2345', '明天', 'ming2tian1', '明日']);
+tb['穴埋め'].push([1, 'ｄｅｆ５６７　abc234', '他（　）了。', '来', '去', '', '', 'A', '']);
+tb['聴解'].push([1, 'abc234，ghi890', 'ma2', '', 'ma1', 'ma2', '', '', 'B', '']);
+tb['スピーキング'] = [['回', 'コード', '課題', '補足', 'お手本', '秒'], [1, 'abc234,def567', 'ni3hao3', '', '', ''], [1, 'ghi890', 'xie4xie', '', '', '']];
+gs = sim.load(tb);
+function counts(code) {
+  var x = gs.call('api_status', code);
+  assert.ok(x.ok, JSON.stringify(x));
+  return [x.countWords, x.countCloze, x.countListen, x.countReading, x.countSpeak];
+}
+assert.deepStrictEqual(counts(STUDENT), [5, 3, 2, 2, 1]);
+assert.deepStrictEqual(counts('def567'), [6, 3, 1, 2, 1]);
+assert.deepStrictEqual(counts('ghi890'), [5, 2, 2, 2, 1]);
+t = gs.call('api_start', PREVIEW, { round: '1', as: 'def567' });
+assert.ok(t.ok && t.questions.length === 6 && t.cloze.length === 3 && t.listen.length === 1, JSON.stringify(t)); // プレビューで学生を選んだときも同じ
 
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');
