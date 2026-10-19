@@ -111,4 +111,61 @@ r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3]);
 assert.ok(!r.ok && /提出済み/.test(r.error), JSON.stringify(r));
 assert.strictEqual(gs.sheets['読解明細'].length, 3);
 
+// 6) スピーキング：指定した拼音を発音して録音し、ドライブに保存して、先生の評価を結果に出す
+var tb = tables();
+tb['スピーキング'] = [['回', 'コード', '課題', '補足', 'お手本', '秒'],
+  ['例', '全員', '见本', '', '', ''],
+  [1, '全員', 'ni3hao3', '你好', 'nihao', 30],
+  [1, '全員', 'lv4 nv3', 'ü の発音', '', 999],
+  [2, '全員', '第2回は話すだけ', '', '', '']];
+gs = sim.load(tb);
+st = gs.call('api_status', STUDENT);
+assert.ok(st.ok && st.countSpeak === 2 && st.count === 4 + 2 + 2 + 1 + 2, JSON.stringify(st));
+t = gs.call('api_start', STUDENT);
+assert.deepStrictEqual(t.speak, [{ text: 'nǐhǎo', hint: '你好', sec: 30 }, { text: 'lǜ nǚ', hint: 'ü の発音', sec: 180 }]); // お手本はテスト中には送らない
+var rec = Buffer.from('fake-recording').toString('base64');
+// 壊れたデータは、何も記録せずに断る
+r = gs.call('api_submit', STUDENT, '1', [], [], null, [], [], [{ i: 0, mime: 'audio/webm', data: '%%%' }]);
+assert.ok(!r.ok && /録り直/.test(r.error), JSON.stringify(r));
+assert.ok(!gs.sheets['スピーキング提出'] || gs.sheets['スピーキング提出'].length <= 1);
+assert.ok(!gs.call('api_status', STUDENT).submitted);
+// プレビューは保存しない
+r = gs.call('api_submit', PREVIEW, '1', [], [], { round: '1' }, [], [], [{ i: 0, mime: 'audio/webm;codecs=opus', data: rec }]);
+assert.ok(r.ok && r.result.preview, JSON.stringify(r));
+assert.deepStrictEqual(r.result.speak.map(function (q) { return q.recorded; }), [true, false]);
+assert.ok(/音声フォルダ/.test(r.result.speak[0].modelError), JSON.stringify(r.result.speak[0])); // プレビューでは、お手本を読めない理由を出す
+assert.ok(!('modelError' in r.result.speak[1]));
+assert.strictEqual(Object.keys(gs.drive.files).length, 0);
+// 学生の提出：1つ目だけ録音あり
+r = gs.call('api_submit', STUDENT, '1', [], [], null, [], [], [{ i: 0, mime: 'audio/mp4', data: rec }]);
+assert.ok(r.ok, JSON.stringify(r));
+var files = Object.keys(gs.drive.files).map(function (k) { return gs.drive.files[k]; });
+assert.strictEqual(files.length, 1);
+assert.strictEqual(files[0].name, '第1回_テスト学生_' + STUDENT + '_1.m4a');
+assert.strictEqual(Buffer.from(files[0].bytes).toString(), 'fake-recording');
+assert.strictEqual(gs.drive.folders[files[0].folder].name, '第1回');
+var setRow = gs.sheets['設定'].filter(function (x) { return x[0] === '録音フォルダ'; })[0];
+assert.ok(setRow && /folders\//.test(setRow[1]), '録音フォルダが「設定」に書かれていない');
+var sd = gs.sheets['スピーキング提出'];
+assert.strictEqual(sd.length, 3);
+assert.deepStrictEqual(sd[1].slice(4), ['nǐhǎo', files[0].api.getUrl(), '', '']);
+assert.deepStrictEqual(sd[2].slice(4), ['lǜ nǚ', '（録音なし）', '', '']);
+// 先生が評価を書くと、結果画面に出る（スピーキングは点数に入らない）
+sd[1][6] = '8/10'; sd[1][7] = '声調がきれいです';
+res = gs.call('api_result', STUDENT, '1');
+assert.ok(res.ok, JSON.stringify(res));
+assert.strictEqual(res.result.total, 4 + 2 + 2 + 1); // 点数は単語・読解・穴埋め・聴解だけ
+assert.deepStrictEqual(res.result.speak.map(function (q) { return [q.text, q.hint, q.recorded, q.grade, q.comment, !!q.audio]; }),
+  [['nǐhǎo', '你好', true, '8/10', '声調がきれいです', true], ['lǜ nǚ', 'ü の発音', false, '', '', false]]);
+assert.ok(res.result.speak[0].modelError && !/音声フォルダ/.test(res.result.speak[0].modelError)); // 学生には一般的な文だけ
+assert.strictEqual(Buffer.from(res.result.speak[0].audio.data, 'base64').toString(), 'fake-recording');
+st = gs.call('api_status', STUDENT);
+assert.ok(st.submitted && st.history[0].speak === 2, JSON.stringify(st));
+r = gs.call('api_submit', STUDENT, '1', [], [], null, [], [], [{ i: 0, mime: 'audio/mp4', data: rec }]);
+assert.ok(!r.ok && /提出済み/.test(r.error));
+// スピーキングだけの回：プレビューの回の一覧に出る
+assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('2') >= 0);
+t = gs.call('api_start', PREVIEW, { round: '2' });
+assert.ok(t.ok && t.speak.length === 1 && t.speak[0].sec === 20, JSON.stringify(t));
+
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');

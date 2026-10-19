@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>中国語 単語テスト</title>
-<meta name="description" content="中国語講座の単語・読解テスト">
+<meta name="description" content="中国語講座の単語・読解・スピーキングテスト">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -138,6 +138,21 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .ritems .lq{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
 details.reread summary{cursor:pointer;color:var(--jade);font-size:.88rem;font-weight:700}
 details.reread .p-text{margin-top:10px}
+.sp-text{margin:0;text-align:center;font-family:var(--f-zh);font-size:1.8rem;font-weight:500;line-height:1.4;padding:4px 0}
+.sp-hint{margin:0;text-align:center;font-size:.92rem;color:var(--sub);font-family:var(--f-zh)}
+.ritems .spt{font-family:var(--f-zh);font-weight:500;font-size:1.15rem}
+.ritems .plays{grid-column:2;display:flex;flex-wrap:wrap;gap:6px 8px}
+.rec{display:flex;align-items:center;justify-content:center;gap:10px 14px;flex-wrap:wrap}
+.rec-btn{display:inline-flex;align-items:center;gap:8px;background:var(--ng);color:#fff;border:0;border-radius:999px;padding:9px 20px 9px 14px;font-weight:700;cursor:pointer}
+.rec-btn .rd{width:.8rem;height:.8rem;border-radius:50%;background:#fff;flex:none}
+.rec-btn.on .rd{border-radius:2px}
+.rec-btn:disabled{opacity:.6;cursor:default}
+.rec-time{font-variant-numeric:tabular-nums;font-size:.9rem;color:var(--sub)}
+.rec-time.live{color:var(--ng);font-weight:700}
+.rec-ok{font-size:.85rem;color:var(--ok);font-weight:700}
+.ritems .m.wait{color:var(--sub);font-size:.9rem}
+.ritems .grade{grid-column:2;font-weight:700}
+@media (prefers-reduced-motion: no-preference){ .rec-btn.on .rd{animation:blink 1s steps(2,start) infinite} @keyframes blink{to{visibility:hidden}} }
 [hidden]{display:none!important}
 @media (prefers-reduced-motion: no-preference){ .opt{transition:background-color .12s,border-color .12s} }
 /* ---- アプリ用 ---- */
@@ -160,7 +175,7 @@ details.reread .p-text{margin-top:10px}
 
 <script>
 (function(){
-  var S = { code: '', status: null, test: null, answers: {}, cls: null, remember: true, installEvt: null };
+  var S = { code: '', status: null, test: null, answers: {}, rec: {}, cls: null, remember: true, installEvt: null };
   var CFG = window.APP_CONFIG || { classes: [] };
   var CLASSES = (CFG.classes || []).filter(function(c){ return c && c.id && c.url; });
   var STORE_KEY = 'chinese-vocab-test';
@@ -308,10 +323,13 @@ details.reread .p-text{margin-top:10px}
       if (st.countCloze) parts.push(lb.cloze + st.countCloze);
       if (st.countListen) parts.push(lb.listen + st.countListen);
       if (st.countReading) parts.push('読解' + st.countReading);
+      if (st.countSpeak) parts.push(lb.speak + st.countSpeak);
       var kinds = parts.length > 1 ? '（' + parts.join('・') + '）'
-                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countListen ? '（' + lb.listen + '）' : '';
+                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countListen ? '（' + lb.listen + '）'
+                : st.countSpeak ? '（' + lb.speak + '）' : '';
       h += '<div class="state"><span class="dot go"></span>第' + esc(st.round) + '回　全' + st.count + '問' + kinds + '</div>';
       h += '<p class="muted">提出できるのは1回だけです。すべて答えてから提出してください。</p>';
+      if (st.countSpeak) h += '<p class="muted">' + esc(lb.speak) + 'は、拼音を声に出して読み、録音します。静かな場所で受けてください。マイクの使用を聞かれたら「許可」を選んでください。</p>';
       h += '<button class="btn" type="button" id="startBtn">テストを受ける</button>';
     }
     h += '</section>';
@@ -322,7 +340,7 @@ details.reread .p-text{margin-top:10px}
       h += '<ul class="hist">';
       st.history.forEach(function(x){
         h += '<li><span class="r">第' + esc(x.round) + '回</span><span class="d">' + esc(x.date) + '</span>' +
-             '<span class="s">' + x.correct + ' / ' + x.total + '</span>' +
+             '<span class="s">' + (x.total ? x.correct + ' / ' + x.total : '録音提出') + '</span>' +
              '<button class="btn ghost" type="button" data-result="' + esc(x.round) + '">見る</button></li>';
       });
       h += '</ul>';
@@ -365,7 +383,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code, opts).then(function(res){
       if (!res.ok){ renderPreviewHome(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.answers = {}; renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'この内容で受けてみる'; alertInline(netError()); });
   }
 
@@ -374,7 +392,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code).then(function(res){
       if (!res.ok){ loadHomeWith(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.answers = {}; renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'テストを受ける'; alertInline(netError()); });
   }
   function loadHomeWith(msg){
@@ -385,13 +403,13 @@ details.reread .p-text{margin-top:10px}
     app.insertBefore(p, app.firstChild);
   }
   function totalCount(){
-    var n = S.test.questions.length + S.test.cloze.length + S.test.listen.length;
+    var n = S.test.questions.length + S.test.cloze.length + S.test.listen.length + S.test.speak.length;
     S.test.reading.forEach(function(p){ n += p.questions.length; });
     return n;
   }
   function renderTest(){
     var t = S.test, h = '', no = 0, lb = labels(t);
-    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) > 1;
+    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) + (t.speak.length ? 1 : 0) > 1;
     stopAudio(); S.audioSrc = {};
     S.groups = [];
     if (t.preview) h += '<p class="pv-banner">プレビュー中：第' + esc(t.round) + '回／' + esc(S.pvLabel || '') + '。提出しても記録は残りません。</p>';
@@ -443,12 +461,126 @@ details.reread .p-text{margin-top:10px}
         h += keyedOpts(g, no, q.options) + '</section>';
       });
     });
+    if (t.speak.length && multi) h += '<h2 class="sec-title">' + esc(lb.speak) + '</h2>';
+    if (t.speak.length && !canRecord()) h += '<p class="error">この画面では録音できません。Safari や Chrome などのブラウザで開き直してください。</p>';
+    t.speak.forEach(function(q, i){
+      var g = 's' + i;
+      no++; S.groups.push(g);
+      h += '<section class="q" id="' + g + '">';
+      h += '<div class="q-head"><b>問' + no + '</b><span>拼音を発音して録音する（' + fmtSec(q.sec) + 'まで）</span></div>';
+      h += '<p class="sp-text" lang="zh-Latn">' + esc(q.text) + '</p>';
+      if (q.hint) h += '<p class="sp-hint">' + esc(q.hint) + '</p>';
+      h += '<div class="rec" id="rec' + i + '">' + recHtml(i) + '</div></section>';
+    });
     app.innerHTML = h;
     bar.hidden = false;
     renderBar();
     scrollTop();
   }
-  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', listen: l.listen || '聴解' }; }
+  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', listen: l.listen || '聴解', speak: l.speak || 'スピーキング' }; }
+
+  /* ---------- 録音（スピーキング） ---------- */
+  // S.rec[i] = { blob, url, mime, sec }。録音中は REC に入れる。提出するまで端末の中だけにある
+  var REC = {};
+  function canRecord(){ return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+  function recMime(){ // 端末が対応している形式を選ぶ（Chrome は webm、iPhone は mp4 など）
+    var list = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
+    for (var i = 0; i < list.length; i++) { try { if (MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) {} }
+    return '';
+  }
+  function fmtSec(n){ n = Math.max(0, Math.floor(n)); return Math.floor(n / 60) + ':' + ('0' + n % 60).slice(-2); }
+  function resetRec(){
+    stopRec(true);
+    Object.keys(S.rec || {}).forEach(function(k){ try { URL.revokeObjectURL(S.rec[k].url); } catch (e) {} });
+    S.rec = {};
+  }
+  function recHtml(i){
+    if (!canRecord()) return '';
+    var q = S.test.speak[i], r = S.rec[i];
+    if (REC.key === i){
+      if (REC.pending) return '<button type="button" class="rec-btn" disabled><span class="rd"></span>マイクを準備しています…</button>';
+      return '<button type="button" class="rec-btn on" data-rec="' + i + '"><span class="rd"></span>止める</button>' +
+             '<span class="rec-time live" id="recTime">● 録音中 0:00 / ' + fmtSec(q.sec) + '</span>';
+    }
+    if (r){
+      S.audioSrc['s' + i] = r.url;
+      return '<button type="button" class="play" data-play="s' + i + '" aria-label="自分の録音を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">聞き直す</span></button>' +
+             '<span class="rec-ok">録音済み（' + fmtSec(r.sec) + '）</span>' +
+             '<button type="button" class="link" data-rec="' + i + '">録り直す</button>' +
+             (r.err ? '<p class="audio-err">' + esc(r.err) + '</p>' : '');
+    }
+    return '<button type="button" class="rec-btn" data-rec="' + i + '"><span class="rd"></span>録音する</button>' +
+           (S.recErr && S.recErr.i === i ? '<p class="audio-err">' + esc(S.recErr.msg) + '</p>' : '');
+  }
+  function drawRec(i){ var el = document.getElementById('rec' + i); if (el) el.innerHTML = recHtml(i); }
+  function micError(err){
+    var n = err && err.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return 'マイクが使えません。ブラウザ（または端末の設定）でマイクを「許可」にしてから、もう一度押してください。';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'マイクが見つかりませんでした。';
+    if (n === 'NotReadableError') return 'マイクを使えませんでした。通話やほかの録音アプリを閉じてから、もう一度押してください。';
+    return '録音を始められませんでした。もう一度押してください。';
+  }
+  function toggleRec(i){
+    if (REC.key === i){ if (!REC.pending) stopRec(); return; }
+    if (REC.key != null) stopRec();
+    stopAudio();
+    var q = S.test.speak[i];
+    S.recErr = null;
+    REC = { key: i, pending: true };
+    drawRec(i);
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(function(stream){
+      if (REC.key !== i || !S.test){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
+      var mime = recMime(), mr;
+      try { mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 48000 } : { audioBitsPerSecond: 48000 }); }
+      catch (e) { mr = new MediaRecorder(stream); }
+      var chunks = [], rec = { key: i, mr: mr, stream: stream, t0: Date.now(), limit: q.sec };
+      mr.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = function(){
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        clearInterval(rec.timer);
+        if (REC === rec) REC = {};
+        if (rec.cancel) return;
+        var type = (mr.mimeType || mime || 'audio/webm').split(';')[0];
+        var blob = new Blob(chunks, { type: type });
+        if (!blob.size){ S.recErr = { i: i, msg: '録音できませんでした。もう一度押してください。' }; drawRec(i); return; }
+        if (S.rec[i]) try { URL.revokeObjectURL(S.rec[i].url); } catch (e) {}
+        S.rec[i] = { blob: blob, url: URL.createObjectURL(blob), mime: type, sec: Math.min(rec.limit, Math.round((Date.now() - rec.t0) / 1000)) };
+        S.answers['s' + i] = 1;
+        var sec = document.getElementById('s' + i); if (sec) sec.classList.remove('unanswered');
+        drawRec(i);
+        if (rec.then) rec.then(); else renderBar(!!bar.querySelector('#confirmBtn')); // 確認の表示中なら、未回答の数を数え直す
+      };
+      rec.timer = setInterval(function(){
+        var t = (Date.now() - rec.t0) / 1000, el = document.getElementById('recTime');
+        if (el) el.textContent = '● 録音中 ' + fmtSec(t) + ' / ' + fmtSec(rec.limit);
+        if (t >= rec.limit) stopRec();
+      }, 250);
+      REC = rec;
+      mr.start(1000);
+      drawRec(i);
+    }, function(err){
+      if (REC.key === i) REC = {};
+      S.recErr = { i: i, msg: micError(err) };
+      drawRec(i);
+    });
+  }
+  /** 録音を止める（cancel なら捨てる）。止まって保存されたあとに then を呼ぶ */
+  function stopRec(cancel, then){
+    var rec = REC;
+    if (rec.key == null){ if (then) then(); return; }
+    if (rec.pending || !rec.mr){ REC = {}; if (then) then(); return; } // マイクの準備中に止めたときは、準備ができても録音しない
+    rec.cancel = !!cancel; rec.then = then;
+    try { if (rec.mr.state !== 'inactive') rec.mr.stop(); else if (then) then(); } catch (e) { REC = {}; if (then) then(); }
+    if (cancel) REC = {};
+  }
+  function blobToBase64(blob){
+    return new Promise(function(res, rej){
+      var fr = new FileReader();
+      fr.onload = function(){ var s = String(fr.result); res(s.slice(s.indexOf(',') + 1)); };
+      fr.onerror = function(){ rej(fr.error); };
+      fr.readAsDataURL(blob);
+    });
+  }
 
   /* ---------- 音声（聴解） ---------- */
   var PLAY_SVG = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg>';
@@ -537,6 +669,17 @@ details.reread .p-text{margin-top:10px}
   }
   function submitTest(btn){
     btn.disabled = true; btn.textContent = '提出しています…';
+    if (REC.key != null){ stopRec(false, function(){ submitTest(btn); }); return; } // 録音中なら、止めて保存してから提出する
+    var recs = Object.keys(S.rec || {});
+    Promise.all(recs.map(function(k){
+      var r = S.rec[k];
+      return blobToBase64(r.blob).then(function(d){ return { i: Number(k), mime: r.mime, data: d }; });
+    })).then(function(sAnswers){ sendTest(btn, sAnswers); }, function(){
+      btn.disabled = false; btn.textContent = '提出する';
+      var p = bar.querySelector('.confirm p'); if (p) p.innerHTML = '<span style="color:var(--ng)">録音を読み込めませんでした。録り直してから提出してください。</span>';
+    });
+  }
+  function sendTest(btn, sAnswers){
     var answers = S.test.questions.map(function(q, i){
       var v = S.answers['q' + i];
       return { type: q.type, prompt: q.prompt, choice: v != null ? q.options[v] : '' };
@@ -556,9 +699,17 @@ details.reread .p-text{margin-top:10px}
       var v = S.answers['l' + i];
       return { i: i, choice: v != null ? q.options[v] : '' };
     });
-    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers).then(function(res){
-      if (!res.ok){ bar.hidden = true; loadHomeWith(res.error); return; }
+    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers, sAnswers).then(function(res){
+      if (!res.ok){
+        if (S.test.speak.length && /録音/.test(res.error || '')){ // 録音の問題なら、テストの画面のまま録り直せるようにする
+          btn.disabled = false; btn.textContent = '提出する';
+          var p0 = bar.querySelector('.confirm p'); if (p0) p0.innerHTML = '<span style="color:var(--ng)">' + esc(res.error) + '</span>';
+          return;
+        }
+        bar.hidden = true; loadHomeWith(res.error); return;
+      }
       (res.result.listen || []).forEach(function(q, i){ var t = S.test.listen[i]; if (t && t.audio) q.audio = t.audio; }); // 結果でも聞き直せるように
+      (res.result.speak || []).forEach(function(q, i){ var r = S.rec[i]; if (r) q.audioUrl = r.url; });
       bar.hidden = true; S.test = null; renderResult(res.result, true);
     }, function(){
       btn.disabled = false; btn.textContent = '提出する';
@@ -575,12 +726,13 @@ details.reread .p-text{margin-top:10px}
     }, function(){ if (btn) btn.disabled = false; alertInline(netError()); });
   }
   function renderResult(r, justSubmitted){
-    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], listen = r.listen || [], lb = labels(r);
+    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
     stopAudio(); S.audioSrc = {};
     var h = '<section class="card">';
     if (r.preview) h += '<p class="pv-banner">プレビューの結果です（記録はされていません）。</p>';
     h += '<h2>第' + esc(r.round) + '回の結果</h2>';
-    h += '<div class="score"><span class="big">' + r.correct + ' / ' + r.total + '</span><span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
+    h += '<div class="score">' + (r.total ? '<span class="big">' + r.correct + ' / ' + r.total + '</span>' : '') + '<span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
+    if (speak.length && r.total) h += '<p class="muted">' + esc(lb.speak) + 'は先生が採点します（この点数には入りません）。</p>';
     if (items.length){
       if (reading.length || cloze.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
       h += '<ul class="items">';
@@ -630,6 +782,27 @@ details.reread .p-text{margin-top:10px}
       });
       h += '</ul></section>';
     });
+    if (speak.length){
+      h += '<section class="card"><h2>' + esc(lb.speak) + '</h2><ul class="ritems">';
+      speak.forEach(function(q, i){
+        var key = 'v' + i, play = '';
+        if (q.audioUrl) S.audioSrc[key] = q.audioUrl;
+        else if (q.audio) S.audioSrc[key] = 'data:' + q.audio.mime + ';base64,' + q.audio.data;
+        if (S.audioSrc[key]) play = '<button type="button" class="play sm" data-play="' + key + '" aria-label="自分の録音を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">自分の録音</span></button>';
+        if (q.model){
+          S.audioSrc['w' + i] = 'data:' + q.model.mime + ';base64,' + q.model.data;
+          play += '<button type="button" class="play sm" data-play="w' + i + '" aria-label="お手本を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">お手本</span></button>';
+        } else if (q.modelError) play += '<span class="audio-err">' + esc(q.modelError) + '</span>';
+        var state = !q.recorded ? '録音なし' : r.preview ? 'プレビューなので保存していません' : q.grade ? '' : '先生の採点待ち';
+        h += '<li><span class="m wait" aria-hidden="true">' + (i + 1) + '</span>' +
+             '<span class="spt" lang="zh-Latn">' + esc(q.text) + '</span>' +
+             (q.hint ? '<span class="ca muted">' + esc(q.hint) + '</span>' : '') +
+             (play ? '<span class="plays">' + play + '</span>' : '') +
+             (q.grade ? '<span class="grade">評価：' + esc(q.grade) + '</span>' : '<span class="ca muted">' + esc(state) + '</span>') +
+             (q.comment ? '<span class="note">' + esc(q.comment) + '</span>' : '') + '</li>';
+      });
+      h += '</ul></section>';
+    }
     h += '<button class="btn ghost" type="button" id="homeBtn">' + (r.preview ? 'プレビューに戻る' : 'ホームに戻る') + '</button>';
     app.innerHTML = h;
     scrollTop();
@@ -647,7 +820,7 @@ details.reread .p-text{margin-top:10px}
     var b = e.target.closest('button'); if (!b) return;
     if (b.id === 'startBtn') startTest(b);
     else if (b.id === 'pvStart') startPreview(b);
-    else if (b.id === 'submitBtn') renderBar(true);
+    else if (b.id === 'submitBtn'){ if (REC.key != null) stopRec(); renderBar(true); }
     else if (b.id === 'backBtn'){
       renderBar();
       var first = null;
@@ -659,7 +832,8 @@ details.reread .p-text{margin-top:10px}
       if (target) target.scrollIntoView({ block: 'center' });
     }
     else if (b.id === 'confirmBtn'){ stopAudio(); submitTest(b); }
-    else if (b.hasAttribute('data-play')) playAudio(b);
+    else if (b.hasAttribute('data-play')){ if (REC.key != null) stopRec(); playAudio(b); }
+    else if (b.hasAttribute('data-rec')) toggleRec(Number(b.getAttribute('data-rec')));
     else if (b.id === 'homeBtn'){ stopAudio(); app.innerHTML = '<p class="loading">読み込んでいます…</p>'; loadHome(); }
     else if (b.id === 'logout'){ S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
     else if (b.id === 'installBtn' && S.installEvt){ S.installEvt.prompt(); S.installEvt = null; refreshInstall(); }

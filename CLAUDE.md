@@ -1,6 +1,6 @@
 # 中国語講座 単語テスト
 
-学生が受ける単語・読解テストのアプリです。このリポジトリは公開で、GitHub Pages で配信されています。
+学生が受ける単語・読解・スピーキングテストのアプリです。このリポジトリは公開で、GitHub Pages で配信されています。
 学生用URL: https://kaku-2001.github.io/chinese-test/?c=<クラスid>
 
 ## しくみ
@@ -25,7 +25,7 @@
   KK さんが本番に貼ったら同じ内容をここにもコミットします。ここが本番とずれると、貼り付けで
   本番の機能（穴埋め・聴解など）を消してしまいます。
 - `index.html` が送る引数と Code.gs の受け取る引数は対応しています
-  （例: `api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers)`）。
+  （例: `api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers)`）。
   片方だけ変えるときは、もう片方が古いままでも壊れないようにします。
 
 ## 確認のしかた
