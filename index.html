@@ -138,9 +138,11 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .ritems .lq{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
 details.reread summary{cursor:pointer;color:var(--jade);font-size:.88rem;font-weight:700}
 details.reread .p-text{margin-top:10px}
-.sp-text{margin:0;font-family:var(--f-zh);font-size:1.15rem;font-weight:500;line-height:1.9}
-.sp-hint{margin:0;font-size:.92rem;color:var(--sub);font-family:var(--f-zh)}
-.rec{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.sp-text{margin:0;text-align:center;font-family:var(--f-zh);font-size:1.8rem;font-weight:500;line-height:1.4;padding:4px 0}
+.sp-hint{margin:0;text-align:center;font-size:.92rem;color:var(--sub);font-family:var(--f-zh)}
+.ritems .spt{font-family:var(--f-zh);font-weight:500;font-size:1.15rem}
+.ritems .plays{grid-column:2;display:flex;flex-wrap:wrap;gap:6px 8px}
+.rec{display:flex;align-items:center;justify-content:center;gap:10px 14px;flex-wrap:wrap}
 .rec-btn{display:inline-flex;align-items:center;gap:8px;background:var(--ng);color:#fff;border:0;border-radius:999px;padding:9px 20px 9px 14px;font-weight:700;cursor:pointer}
 .rec-btn .rd{width:.8rem;height:.8rem;border-radius:50%;background:#fff;flex:none}
 .rec-btn.on .rd{border-radius:2px}
@@ -327,7 +329,7 @@ details.reread .p-text{margin-top:10px}
                 : st.countSpeak ? '（' + lb.speak + '）' : '';
       h += '<div class="state"><span class="dot go"></span>第' + esc(st.round) + '回　全' + st.count + '問' + kinds + '</div>';
       h += '<p class="muted">提出できるのは1回だけです。すべて答えてから提出してください。</p>';
-      if (st.countSpeak) h += '<p class="muted">' + esc(lb.speak) + 'は声を録音して答えます。静かな場所で受けてください。マイクの使用を聞かれたら「許可」を選んでください。</p>';
+      if (st.countSpeak) h += '<p class="muted">' + esc(lb.speak) + 'は、拼音を声に出して読み、録音します。静かな場所で受けてください。マイクの使用を聞かれたら「許可」を選んでください。</p>';
       h += '<button class="btn" type="button" id="startBtn">テストを受ける</button>';
     }
     h += '</section>';
@@ -465,10 +467,9 @@ details.reread .p-text{margin-top:10px}
       var g = 's' + i;
       no++; S.groups.push(g);
       h += '<section class="q" id="' + g + '">';
-      h += '<div class="q-head"><b>問' + no + '</b><span>声に出して答え、録音する（' + fmtSec(q.sec) + 'まで）</span></div>';
-      h += '<p class="sp-text" lang="zh-CN">' + esc(q.text) + '</p>';
+      h += '<div class="q-head"><b>問' + no + '</b><span>拼音を発音して録音する（' + fmtSec(q.sec) + 'まで）</span></div>';
+      h += '<p class="sp-text" lang="zh-Latn">' + esc(q.text) + '</p>';
       if (q.hint) h += '<p class="sp-hint">' + esc(q.hint) + '</p>';
-      if (q.audio || q.audioError) h += playHtml('m' + i, q, true).replace('>聞く<', '>お手本を聞く<');
       h += '<div class="rec" id="rec' + i + '">' + recHtml(i) + '</div></section>';
     });
     app.innerHTML = h;
@@ -788,10 +789,15 @@ details.reread .p-text{margin-top:10px}
         if (q.audioUrl) S.audioSrc[key] = q.audioUrl;
         else if (q.audio) S.audioSrc[key] = 'data:' + q.audio.mime + ';base64,' + q.audio.data;
         if (S.audioSrc[key]) play = '<button type="button" class="play sm" data-play="' + key + '" aria-label="自分の録音を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">自分の録音</span></button>';
+        if (q.model){
+          S.audioSrc['w' + i] = 'data:' + q.model.mime + ';base64,' + q.model.data;
+          play += '<button type="button" class="play sm" data-play="w' + i + '" aria-label="お手本を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">お手本</span></button>';
+        } else if (q.modelError) play += '<span class="audio-err">' + esc(q.modelError) + '</span>';
         var state = !q.recorded ? '録音なし' : r.preview ? 'プレビューなので保存していません' : q.grade ? '' : '先生の採点待ち';
         h += '<li><span class="m wait" aria-hidden="true">' + (i + 1) + '</span>' +
-             '<span class="qt" lang="zh-CN">' + esc(q.text) + '</span>' +
-             (play ? '<span class="ca">' + play + '</span>' : '') +
+             '<span class="spt" lang="zh-Latn">' + esc(q.text) + '</span>' +
+             (q.hint ? '<span class="ca muted">' + esc(q.hint) + '</span>' : '') +
+             (play ? '<span class="plays">' + play + '</span>' : '') +
              (q.grade ? '<span class="grade">評価：' + esc(q.grade) + '</span>' : '<span class="ca muted">' + esc(state) + '</span>') +
              (q.comment ? '<span class="note">' + esc(q.comment) + '</span>' : '') + '</li>';
       });
