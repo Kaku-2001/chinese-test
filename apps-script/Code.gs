@@ -188,7 +188,7 @@ function setupSheets() {
     cz.getRange('C:I').setWrap(true);
     cz.getRange(2, 8, 999, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(LETTERS, true).build());
     styleHeader_(cz, HEAD.cloze.length);
-    cz.getRange(1, 3).setNote('空欄は（　）で書きます（＿＿ や ( ) でも可）。\n選択肢は2〜4個。正解は記号（A〜D）で選びます。\n「コード」は「全員」または学生のコード。\n回が「例」の行は出題されません（入力の見本）。');
+    cz.getRange(1, 3).setNote('空欄は（　）で書きます（＿＿ や ( ) でも可）。\n選択肢は2〜4個。正解は記号（A〜D）で選びます。\n「コード」は「全員」または学生のコード（「,」で区切って何人分も書けます）。\n回が「例」の行は出題されません（入力の見本）。');
     cz.getRange(1, 9).setNote('任意。学生が結果画面で見られます。');
     cz.setColumnWidth(3, 320);
     cz.setColumnWidth(9, 280);
@@ -854,7 +854,7 @@ function findStudent_(code) {
 function allWords_() {
   return rows_(SHEET.words, HEAD.words.length)
     .map(function (r) {
-      return { round: normRound_(r[0]), all: norm_(r[1]) === ALL, code: normCode_(r[1]),
+      return { round: normRound_(r[0]), codes: norm_(r[1]),
         hanzi: norm_(r[2]), pinyin: numToMark_(norm_(r[3])).normalize('NFC'), meaning: norm_(r[4]) };
     })
     .filter(function (w) { return w.hanzi && w.meaning; });
@@ -863,7 +863,7 @@ function allWords_() {
 function wordsFor_(code, round, pool) {
   var seen = {};
   return (pool || allWords_()).filter(function (w) {
-    if (w.round !== round || !(w.all || w.code === code) || seen[w.hanzi]) return false;
+    if (w.round !== round || !forCode_(w.codes, code) || seen[w.hanzi]) return false;
     seen[w.hanzi] = true;
     return true;
   });
@@ -881,7 +881,7 @@ function clozeFor_(code, round) {
   rows_(SHEET.cloze, HEAD.cloze.length).forEach(function (r) {
     if (normRound_(r[0]) !== round) return;
     var c = norm_(r[1]);
-    if (!(c === ALL || normCode_(c) === code)) return;
+    if (!forCode_(c, code)) return;
     var text = pinyinText_(r[2]);
     if (!text || seen[text]) return;
     var options = [], answer = -1, letter = norm_(r[7]).normalize('NFKC').toUpperCase();
@@ -903,7 +903,7 @@ function listenFor_(code, round) {
   rows_(SHEET.listen, HEAD.listen.length).forEach(function (r) {
     if (normRound_(r[0]) !== round) return;
     var c = norm_(r[1]);
-    if (!(c === ALL || normCode_(c) === code)) return;
+    if (!forCode_(c, code)) return;
     var file = norm_(r[2]), text = norm_(r[3]);
     if (!file || seen[file + '\n' + text]) return;
     var options = [], answer = -1, letter = norm_(r[8]).normalize('NFKC').toUpperCase();
@@ -929,7 +929,7 @@ function speakFor_(code, round) {
   rows_(SHEET.speak, HEAD.speak.length).forEach(function (r) {
     if (normRound_(r[0]) !== round) return;
     var c = norm_(r[1]);
-    if (!(c === ALL || normCode_(c) === code)) return;
+    if (!forCode_(c, code)) return;
     var text = pinyinText_(r[2]);
     if (!text || seen[text]) return;
     seen[text] = true;
@@ -1137,7 +1137,7 @@ function readingFor_(code, round) {
     var pid = norm_(r[2]);
     if (!pid || seen[pid] || normRound_(r[0]) !== round) return;
     var c = norm_(r[1]);
-    if (!(c === ALL || normCode_(c) === code)) return;
+    if (!forCode_(c, code)) return;
     if (!norm_(r[4]) || !qs[pid]) return;
     seen[pid] = true;
     out.push({ pid: pid, title: pinyinText_(r[3]), text: pinyinText_(r[4]), notes: splitNotes_(r[5]), questions: qs[pid] });
@@ -1171,6 +1171,10 @@ function rows_(name, width) {
   return sh.getRange(2, 1, sh.getLastRow() - 1, width).getValues();
 }
 function norm_(v) { return String(v == null ? '' : v).trim(); }
+/** 問題シートの「コード」欄がその学生に当てはまるか。「全員」のほか、「,」「、」やスペースで区切って何人分も書ける */
+function forCode_(cell, code) {
+  return normCode_(cell).split(/[\s,、;；・\/]+/).some(function (c) { return c === ALL || (c !== '' && c === code); });
+}
 function normCode_(v) { return norm_(v).normalize('NFKC').toLowerCase(); } // 全角入力も受け付ける
 function normRound_(v) { return norm_(v).normalize('NFKC'); }
 function fmtDate_(d) { return d instanceof Date ? Utilities.formatDate(d, TZ, 'yyyy/MM/dd HH:mm') : norm_(d); }
