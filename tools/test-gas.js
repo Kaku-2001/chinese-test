@@ -111,6 +111,9 @@ r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3]);
 assert.ok(!r.ok && /提出済み/.test(r.error), JSON.stringify(r));
 assert.strictEqual(gs.sheets['読解明細'].length, 3);
 
+// 前の画面（doGet）：スピーキングのシートがなければ、今までどおりの画面
+assert.strictEqual(gs.ctx.doGet().html, 'TEMPLATE:Index');
+
 // 6) スピーキング：指定した拼音を発音して録音し、ドライブに保存して、先生の評価を結果に出す
 var tb = tables();
 tb['スピーキング'] = [['回', 'コード', '課題', '補足', 'お手本', '秒'],
@@ -175,5 +178,12 @@ gs.sheets['設定'][2][1] = 1;
 assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('2') >= 0);
 t = gs.call('api_start', PREVIEW, { round: '2' });
 assert.ok(t.ok && t.speak.length === 1 && t.speak[0].sec === 20, JSON.stringify(t));
+
+// スピーキングのシートがあるクラスでは、前の画面はアプリへの案内だけになる
+var g = gs.ctx.doGet().html;
+assert.ok(/テストはアプリで受けてください/.test(g) && /先生から届いたアプリのURL/.test(g), g);
+gs.sheets['設定'].push(['アプリのURL', 'https://example.github.io/app/?c=x&y="1"', '']);
+g = gs.ctx.doGet().html;
+assert.ok(g.indexOf('href="https://example.github.io/app/?c=x&amp;y=&quot;1&quot;" target="_top"') >= 0, g);
 
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');

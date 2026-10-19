@@ -321,10 +321,30 @@ function issueCodes() {
 /* ===================== ウェブページ ===================== */
 
 function doGet() {
+  // スピーキングを使うクラス（「スピーキング」シートがある）では、この画面ではマイクが使えないので、アプリへの案内だけを出す
+  if (sheet_(SHEET.speak)) return appGuide_();
   var t = HtmlService.createTemplateFromFile('Index');
   t.course = readSettings_().course;
   return t.evaluate()
     .setTitle(t.course + ' 単語テスト')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** アプリへの案内だけの画面。URLは「設定」の「アプリのURL」 */
+function appGuide_() {
+  var s = readSettings_(), url = /^https:\/\//.test(s.appUrl) ? s.appUrl : '';
+  var h = function (v) { return String(v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><style>' +
+    'body{margin:0;padding:0 16px;font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;background:#F2F5F4;color:#18201E;line-height:1.7}' +
+    '.c{max-width:32rem;margin:40px auto;padding:24px 20px;background:#fff;border:1px solid #D8E0DD;border-radius:8px;text-align:center}' +
+    'h1{font-size:1.2rem;margin:0 0 12px}p{margin:0 0 16px;color:#56625F}' +
+    'a.b{display:inline-block;background:#16705E;color:#fff;font-weight:700;text-decoration:none;border-radius:6px;padding:12px 24px}' +
+    '</style></head><body><div class="c"><h1>' + h(s.course) + ' 単語テスト</h1>' +
+    '<p>テストはアプリで受けてください。<br>スピーキング（録音）はこの画面ではできません。</p>' +
+    (url ? '<a class="b" href="' + h(url) + '" target="_top">アプリを開く</a>'
+         : '<p>先生から届いたアプリのURLを開いてください。</p>') +
+    '</div></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle(s.course + ' 単語テスト')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -813,6 +833,7 @@ function readSettings_() {
     preview: normCode_(map['プレビュー用コード']),
     audioFolder: norm_(map['音声フォルダ']),
     recFolder: norm_(map['録音フォルダ']),
+    appUrl: norm_(map['アプリのURL']),
     labels: { cloze: norm_(map['穴埋めの見出し']) || '穴埋め', listen: norm_(map['聴解の見出し']) || '聴解',
       speak: norm_(map['スピーキングの見出し']) || 'スピーキング' }
   };
