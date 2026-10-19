@@ -1,0 +1,5 @@
+# GitHub Pages で公開しないファイル（学生の画面には関係ありません）
+exclude:
+  - CLAUDE.md
+  - apps-script
+  - tools
