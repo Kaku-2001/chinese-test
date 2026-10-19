@@ -40,7 +40,7 @@ var EXTRA_SETTINGS = [
   ['聴解の見出し', '聴解', '「聴解」シートの問題の見出し'],
   ['音声フォルダ', '', '聴解の音声ファイルを入れるGoogleドライブのフォルダのURL。空なら「初期設定」で自動で作ります'],
   ['スピーキングの見出し', 'スピーキング', '「スピーキング」シートの課題の見出し'],
-  ['録音フォルダ', '', 'スピーキングで学生が録音した音声を保存するGoogleドライブのフォルダのURL（回ごとのフォルダに分けて保存）。空なら自動で作ります']
+  ['録音フォルダ', '', 'スピーキングで学生が録音した音声を保存するGoogleドライブのフォルダのURL（学生ごとのフォルダに分けて保存）。空なら自動で作ります']
 ];
 var AUDIO_MAX = 3 * 1024 * 1024; // 1ファイル3MBまで
 var SPEAK_SEC = 20, SPEAK_SEC_MAX = 180; // スピーキングの録音の長さ（秒）：書いていないときの長さと、上限
@@ -938,19 +938,28 @@ function recordingsFor_(speak, speakAnswers) {
   }
   return out;
 }
-/** 録音を「録音フォルダ」の中の回ごとのフォルダに保存し、ファイルのURLを課題の順に返す（録音のない課題は空） */
+/** 録音を「録音フォルダ」の中の学生ごとのフォルダ（表示名_コード）に保存し、ファイルのURLを課題の順に返す（録音のない課題は空） */
 function saveRecordings_(s, st, recs) {
   if (!recs.some(function (x) { return x; })) return recs.map(function () { return ''; });
   ensureSettingRows_();
   var ref = s.recFolder || ensureRecFolder_();
   var root = DriveApp.getFolderById(folderId_(ref));
-  var name = '第' + s.round + '回', it = root.getFoldersByName(name);
-  var dir = it.hasNext() ? it.next() : root.createFolder(name);
+  var who = (st.name || st.code).replace(/[\\/:*?"<>|]/g, '_');
+  var dir = studentFolder_(root, who, st.code);
   return recs.map(function (x, i) {
     if (!x) return '';
-    var file = '第' + s.round + '回_' + (st.name || st.code).replace(/[\\/:*?"<>|]/g, '_') + '_' + st.code + '_' + (i + 1) + '.' + x.ext;
+    var file = '第' + s.round + '回_' + who + '_' + st.code + '_' + (i + 1) + '.' + x.ext;
     return dir.createFile(Utilities.newBlob(x.bytes, x.mime, file)).getUrl();
   });
+}
+/** 学生のフォルダ。表示名を変えても同じフォルダを使うよう、名前の最後の「_コード」で探す */
+function studentFolder_(root, who, code) {
+  var it = root.getFolders(), tail = '_' + code;
+  while (it.hasNext()) {
+    var f = it.next(), n = f.getName();
+    if (n.slice(-tail.length) === tail) return f;
+  }
+  return root.createFolder(who + tail);
 }
 /** 画面に返すスピーキングの結果（提出の直後。評価はまだない）。お手本の音声があれば添える */
 function speakOut_(speak, recs, s, detailed) {
