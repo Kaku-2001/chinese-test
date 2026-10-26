@@ -75,6 +75,8 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .prompt .pyq{font-family:var(--f-zh);font-size:1.8rem;font-weight:500;line-height:1.3}
 .opt .pyo{font-family:var(--f-zh);font-size:1.2rem}
 .opts{display:grid;gap:8px}
+.o-ja{margin:0;font-weight:700;display:flex;gap:8px;align-items:baseline}
+.o-ja .lbl{flex:none;font-size:.72rem;color:var(--jade);background:var(--jade-soft);border-radius:999px;padding:1px 9px}
 .opt{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:6px;padding:10px 12px;cursor:pointer}
 .opt input{width:1.1rem;height:1.1rem;accent-color:var(--jade);flex:none;margin:0}
 .opt:has(input:checked){border-color:var(--jade);background:var(--jade-soft)}
@@ -453,6 +455,7 @@ details.reread .p-text{margin-top:10px}
       no++; S.groups.push(g);
       h += '<section class="q" id="' + g + '">';
       h += '<div class="q-head"><b>問' + no + '</b><span>' + pickHtml(q.pick) + 'を1つ選ぶ</span></div>';
+      if (q.ja) h += '<p class="o-ja"><span class="lbl">意味</span>' + esc(q.ja) + '</p>';
       h += '<div class="opts" role="radiogroup" aria-label="問' + no + 'の選択肢">';
       q.options.forEach(function(o, j){
         var id = g + 'o' + j;
@@ -798,6 +801,7 @@ details.reread .p-text{margin-top:10px}
                  (j === q.answer ? '<span class="tag">' + (w ? '正しくない文' : '正しい文') + '</span>' : '') + '</span>';
              }).join('') + '</span>' +
              (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice >= 0 ? NUMS.charAt(q.choice) : '未回答') + '</span>') +
+             (q.ja ? '<span class="note">意味：' + esc(q.ja) + '</span>' : '') +
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
       });
       h += '</ul>';

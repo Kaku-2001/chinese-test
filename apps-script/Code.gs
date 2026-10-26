@@ -29,7 +29,7 @@ var HEAD = {
   cloze: ['回', 'コード', '問題文', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解（A〜D）', '解説（任意）'],
   csubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   cdetail: ['提出日時', '回', 'コード', '表示名', '問題文', '正解', '学生の解答', '正誤'],
-  order: ['回', 'コード', '文①', '文②', '文③', '文④', '答えの文（1〜4）', '解説（任意）', '選ぶもの（空なら正しい文）'],
+  order: ['回', 'コード', '文①', '文②', '文③', '文④', '答えの文（1〜4）', '解説（任意）', '選ぶもの（空なら正しい文）', '日本語訳（任意）'],
   osubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   odetail: ['提出日時', '回', 'コード', '表示名', '文（①〜④）', '正解', '学生の解答', '正誤', '選ぶもの'],
   listen: ['回', 'コード', '音声ファイル名', '問題文（任意）', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解（A〜D）', '解説（任意）'],
@@ -205,8 +205,8 @@ function setupSheets() {
   if (!ss.getSheetByName(SHEET.order)) {
     var od = ss.insertSheet(SHEET.order);
     var oex = [ // 回が「例」の行は出題されない（入力の見本）
-      [EXAMPLE, ALL, '我把写完作业了。', '我把作业写完了。', '我把作业完写了。', '把我作业写完了。', 2, '「把」の後ろは「目的語＋動詞＋結果」の順', ''],
-      [EXAMPLE, ALL, '我在图书馆看书。', '我常常在图书馆看书。', '我看书在图书馆。', '我昨天在图书馆看书了。', 3, '場所の「在…」は動詞の前に置く', PICK_WRONG]
+      [EXAMPLE, ALL, '我把写完作业了。', '我把作业写完了。', '我把作业完写了。', '把我作业写完了。', 2, '「把」の後ろは「目的語＋動詞＋結果」の順', '', '私は宿題をやり終えました。'],
+      [EXAMPLE, ALL, '我在图书馆看书。', '我常常在图书馆看书。', '我看书在图书馆。', '我昨天在图书馆看书了。', 3, '場所の「在…」は動詞の前に置く', PICK_WRONG, '']
     ];
     od.getRange(1, 1, 1, HEAD.order.length).setValues([HEAD.order]);
     od.getRange(2, 1, oex.length, HEAD.order.length).setValues(oex).setFontColor('#9AA5A1').setFontStyle('italic');
@@ -219,8 +219,10 @@ function setupSheets() {
     od.getRange(1, 7).setNote('学生が選ぶべき文の番号（1〜4）。ふつうは正しい文の番号、「選ぶもの」が「正しくない」の行は正しくない文の番号。');
     od.getRange(1, 9).setNote('任意。空か「正しい」なら正しい文を選ぶ問題、「正しくない」なら正しくない文を選ぶ問題になります。');
     od.getRange(1, 8).setNote('任意。学生が結果画面で見られます。');
+    od.getRange(1, 10).setNote('任意。書くと、テスト中に文①〜④の上に「意味」として出ます（結果画面にも出ます）。');
     [3, 4, 5, 6].forEach(function (c) { od.setColumnWidth(c, 220); });
     od.setColumnWidth(8, 260);
+    od.setColumnWidth(10, 260);
     created.push(SHEET.order);
   }
   if (!ss.getSheetByName(SHEET.listen)) {
@@ -462,7 +464,7 @@ function api_start(code, opts) {
     ok: true, round: round, preview: pv, labels: s.labels,
     questions: list.length ? buildQuestions_(list, pool, sr) : [],
     cloze: cloze.map(function (q) { return { text: q.text, options: q.options }; }),
-    order: order.map(function (q) { return { options: q.options, pick: q.pick }; }),
+    order: order.map(function (q) { return { options: q.options, pick: q.pick, ja: q.ja }; }),
     listen: listen.map(function (q) { return audioOut_({ text: q.text, options: q.options }, audio[q.file], pv); }),
     reading: reading.map(function (p) {
       return { pid: p.pid, title: p.title, text: p.text, notes: p.notes,
@@ -637,7 +639,7 @@ function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, lis
     var choice = a ? q.options.indexOf(norm_(a.choice).slice(0, 500)) : -1;
     var ok = choice === q.answer;
     if (ok) oCorrect++;
-    return { options: q.options, answer: q.answer, choice: choice, ok: ok, note: q.note, pick: q.pick };
+    return { options: q.options, answer: q.answer, choice: choice, ok: ok, note: q.note, pick: q.pick, ja: q.ja };
   });
   return { items: items, reading: rres, cloze: cres, listen: lres, order: ores, vCorrect: vCorrect, rCorrect: rCorrect, rTotal: rTotal,
     cCorrect: cCorrect, lCorrect: lCorrect, oCorrect: oCorrect,
@@ -709,16 +711,17 @@ function api_result(code, round) {
     var t = unCell_(x[4]), c = norm_(x[6]);
     return { text: t, answer: unCell_(x[5]), choice: c === UNANSWERED ? '' : unCell_(c), ok: norm_(x[7]) === '○', note: notes[pinyinText_(t)] || '' };
   });
-  // 並べ替え：記録した文から選択肢を戻し、解説は「並べ替え」シートの現在の内容を添える
+  // 並べ替え：記録した文から選択肢を戻し、解説と日本語訳は「並べ替え」シートの現在の内容を添える
   var onotes = {};
   rows_(SHEET.order, HEAD.order.length).forEach(function (x) {
-    var k = orderRow_(x).options.join('\n');
-    if (k && !(k in onotes)) onotes[k] = pinyinText_(x[7]);
+    var q = orderRow_(x), k = q.options.join('\n');
+    if (k && !(k in onotes)) onotes[k] = q;
   });
   var order = rows_(SHEET.odetail, HEAD.odetail.length).filter(mine).map(function (x) {
     var options = unCell_(x[4]).split('\n').map(function (l) { return l.replace(/^[①②③④]\s*/, ''); });
     var num = function (v) { return MARUNUM.indexOf(norm_(v).charAt(0)); };
-    return { options: options, answer: num(x[5]), choice: num(x[6]), ok: norm_(x[7]) === '○', note: onotes[options.join('\n')] || '',
+    return { options: options, answer: num(x[5]), choice: num(x[6]), ok: norm_(x[7]) === '○', note: (onotes[options.join('\n')] || {}).note || '',
+      ja: (onotes[options.join('\n')] || {}).ja || '',
       pick: norm_(x[8]) === PICK_RIGHT ? PICK_RIGHT : PICK_WRONG }; // 「選ぶもの」がない行は、正しくない文を選ぶ問題だったころの記録
   });
   // 聴解：解説は「聴解」シートの現在の内容、音声はフォルダから読み直して添える
@@ -980,7 +983,7 @@ function orderFor_(code, round) {
   });
   return out;
 }
-/** 「並べ替え」シートの1行 → { options: 書いてある文, answer: 選ぶべき文の位置（なければ -1）, note, pick: 正しい／正しくない } */
+/** 「並べ替え」シートの1行 → { options: 書いてある文, answer: 選ぶべき文の位置（なければ -1）, note, pick: 正しい／正しくない, ja: 日本語訳 } */
 function orderRow_(r) {
   var options = [], answer = -1;
   var n = norm_(r[6]).normalize('NFKC').toUpperCase(); // ①→1、全角の１→1。A〜D でも受け付ける
@@ -992,7 +995,7 @@ function orderRow_(r) {
     options.push(o);
   }
   var mode = norm_(r[8]).replace(/\s/g, '') === PICK_WRONG ? PICK_WRONG : PICK_RIGHT;
-  return { options: options, answer: answer, note: pinyinText_(r[7]), pick: mode };
+  return { options: options, answer: answer, note: pinyinText_(r[7]), pick: mode, ja: norm_(r[9]) };
 }
 /** 文に①〜④をつける（記録用） */
 function numbered_(options) { return options.map(function (o, i) { return MARUNUM[i] + ' ' + o; }); }
