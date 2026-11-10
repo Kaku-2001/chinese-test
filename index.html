@@ -193,7 +193,7 @@ details.reread .p-text{margin-top:10px}
 
 <script>
 (function(){
-  var S = { tab: 'now', past: {}, pastOpen: {}, code: '', status: null, test: null, answers: {}, rec: {}, cls: null, remember: true, installEvt: null };
+  var S = { tab: 'now', past: {}, pastOpen: {}, pastLoading: {}, pastGen: 0, code: '', status: null, test: null, answers: {}, rec: {}, cls: null, remember: true, installEvt: null };
   var CFG = window.APP_CONFIG || { classes: [] };
   var CLASSES = (CFG.classes || []).filter(function(c){ return c && c.id && c.url; });
   var STORE_KEY = 'chinese-vocab-test';
@@ -311,13 +311,13 @@ details.reread .p-text{margin-top:10px}
   }
   function showHome(){
     setCourse(S.status.course || (S.cls && S.cls.name));
-    if (S.status.preview) renderPreviewHome(); else renderHome();
+    if (S.status.preview) renderPreviewHome(); else { renderHome(); prefetchPast(); }
   }
 
   /* ---------- ホーム ---------- */
   function loadHome(){
     bar.hidden = true;
-    S.past = {}; // 先生の採点・コメントが増えていることがあるので、ホームを開き直すたびに読み直す
+    S.past = {}; S.pastLoading = {}; S.pastGen++; // 先生の採点・コメントが増えていることがあるので、ホームを開き直すたびに読み直す
     call('api_status', S.code).then(function(res){
       if (!res.ok){ forgetCode(); renderLogin(res.error); return; }
       S.status = res;
@@ -385,14 +385,36 @@ details.reread .p-text{margin-top:10px}
     return h + '</div>';
   }
   function pastBody(round){ return document.getElementById('pr-' + round); }
+  // 1回分の結果を読み込む。同じ回を同時に二重に頼まないようにし、読めたものは S.past にとっておく
+  function loadPast(round){
+    if (S.past[round]) return Promise.resolve({ ok: true, result: S.past[round] });
+    if (S.pastLoading[round]) return S.pastLoading[round];
+    var gen = S.pastGen;
+    var pr = call('api_result', S.code, round).then(function(x){
+      if (gen === S.pastGen){ delete S.pastLoading[round]; if (x.ok) S.past[round] = x.result; }
+      return x;
+    }, function(err){
+      if (gen === S.pastGen) delete S.pastLoading[round];
+      throw err;
+    });
+    S.pastLoading[round] = pr;
+    return pr;
+  }
+  // ホームを開いたら、過去の回を新しい順に1つずつ裏で読み込んでおく（押したときにすぐ開けるように）
+  function prefetchPast(){
+    var gen = S.pastGen, list = (S.status.history || []).map(function(x){ return x.round; });
+    (function next(i){
+      if (i >= list.length || gen !== S.pastGen) return;
+      loadPast(list[i]).then(function(){ next(i + 1); }, function(){}); // 通信できないときはやめて、押したときに読む
+    })(0);
+  }
   function fillPast(round){
     var el = pastBody(round); if (!el) return;
     var res = S.past[round];
     if (!res){
       el.innerHTML = '<p class="loading">読み込んでいます…</p>';
-      call('api_result', S.code, round).then(function(x){
+      loadPast(round).then(function(x){
         if (!x.ok){ var e = pastBody(round); if (e) e.innerHTML = '<p class="error" role="alert">' + esc(x.error) + '</p>'; return; }
-        S.past[round] = x.result;
         if (S.pastOpen[round]) fillPast(round);
       }, function(){
         var e = pastBody(round); if (e) e.innerHTML = '<p class="error" role="alert">' + esc(netError()) + '</p>';
@@ -454,6 +476,7 @@ details.reread .p-text{margin-top:10px}
 
   /* ---------- テスト ---------- */
   function startTest(btn){
+    S.pastGen++; S.pastLoading = {}; // テストを受けるときは、裏の読み込みをやめる
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code).then(function(res){
       if (!res.ok){ loadHomeWith(res.error); return; }
@@ -948,7 +971,7 @@ details.reread .p-text{margin-top:10px}
     else if (b.id === 'homeBtn'){ stopAudio(); app.innerHTML = '<p class="loading">読み込んでいます…</p>'; loadHome(); }
     else if (b.dataset.tab){ if (S.tab !== b.dataset.tab){ S.tab = b.dataset.tab; renderHome(); } }
     else if (b.dataset.past) togglePast(b.dataset.past);
-    else if (b.id === 'logout'){ S.tab = 'now'; S.past = {}; S.pastOpen = {}; S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
+    else if (b.id === 'logout'){ S.tab = 'now'; S.past = {}; S.pastOpen = {}; S.pastLoading = {}; S.pastGen++; S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
     else if (b.id === 'installBtn' && S.installEvt){ S.installEvt.prompt(); S.installEvt = null; refreshInstall(); }
     else if (b.dataset.result) openResult(b.dataset.result, b);
   });
