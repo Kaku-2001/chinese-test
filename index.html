@@ -58,12 +58,6 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .dot{width:.6rem;height:.6rem;border-radius:50%;background:var(--sub);flex:none}
 .dot.go{background:var(--jade)}
 .dot.done{background:var(--ok)}
-.hist{list-style:none;margin:0;padding:0;display:grid}
-.hist li{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
-.hist li:first-child{border-top:0}
-.hist .r{font-weight:700;min-width:4.5rem}
-.hist .d{color:var(--sub);font-size:.82rem;flex:1;min-width:0}
-.hist .s{font-variant-numeric:tabular-nums;font-weight:700}
 .q{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:10px}
 .q.unanswered{border-color:var(--ng)}
 .q-head{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--sub)}
@@ -170,6 +164,20 @@ details.reread .p-text{margin-top:10px}
 .install b{font-size:.92rem}
 .check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--sub);cursor:pointer}
 .check input{width:1.05rem;height:1.05rem;accent-color:var(--jade);margin:0}
+/* ---- ホームのタブと「過去の受験」 ---- */
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px}
+.tabs button{border:0;background:none;border-radius:6px;padding:10px 8px;font-weight:700;color:var(--sub);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--jade);color:var(--on-jade)}
+.past{display:grid;gap:10px}
+.pr-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;cursor:pointer}
+.pr-head[aria-expanded="true"]{border-color:var(--jade)}
+.pr-head .r{font-weight:700;min-width:4.5rem}
+.pr-head .d{color:var(--sub);font-size:.82rem;flex:1;min-width:0}
+.pr-head .s{font-variant-numeric:tabular-nums;font-weight:700}
+.pr-head .chev{flex:none;width:.55rem;height:.55rem;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:rotate(45deg);margin:0 4px 4px}
+.pr-head[aria-expanded="true"] .chev{transform:rotate(225deg);margin:4px 4px 0}
+.pr-body{display:grid;gap:14px;margin-bottom:8px}
+.pr-body .close-row{display:flex;justify-content:flex-end}
 </style>
 <script src="config.js"></script>
 </head>
@@ -185,7 +193,7 @@ details.reread .p-text{margin-top:10px}
 
 <script>
 (function(){
-  var S = { code: '', status: null, test: null, answers: {}, rec: {}, cls: null, remember: true, installEvt: null };
+  var S = { tab: 'now', past: {}, pastOpen: {}, code: '', status: null, test: null, answers: {}, rec: {}, cls: null, remember: true, installEvt: null };
   var CFG = window.APP_CONFIG || { classes: [] };
   var CLASSES = (CFG.classes || []).filter(function(c){ return c && c.id && c.url; });
   var STORE_KEY = 'chinese-vocab-test';
@@ -309,6 +317,7 @@ details.reread .p-text{margin-top:10px}
   /* ---------- ホーム ---------- */
   function loadHome(){
     bar.hidden = true;
+    S.past = {}; // 先生の採点・コメントが増えていることがあるので、ホームを開き直すたびに読み直す
     call('api_status', S.code).then(function(res){
       if (!res.ok){ forgetCode(); renderLogin(res.error); return; }
       S.status = res;
@@ -317,8 +326,22 @@ details.reread .p-text{margin-top:10px}
   }
   function renderHome(msg){
     var st = S.status, h = '';
+    stopAudio();
     if (msg) h += '<p class="error" role="alert">' + esc(msg) + '</p>';
-    h += '<section class="card">';
+    h += '<div class="tabs" role="tablist" aria-label="ホームの切り替え">' +
+         '<button type="button" role="tab" data-tab="now" aria-selected="' + (S.tab !== 'past') + '">今週のテスト</button>' +
+         '<button type="button" role="tab" data-tab="past" aria-selected="' + (S.tab === 'past') + '">過去の受験</button></div>';
+    if (S.tab === 'past') h += pastHtml(st);
+    else h += nowHtml(st);
+    h += '<button class="link" type="button" id="logout">別のコードで入る</button>';
+    h += '<div id="installSlot"></div>';
+    app.innerHTML = h;
+    if (S.tab === 'past') Object.keys(S.pastOpen).forEach(function(r){ fillPast(r); });
+    refreshInstall();
+    scrollTop();
+  }
+  function nowHtml(st){
+    var h = '<section class="card">';
     h += '<h2>' + (st.name ? esc(st.name) + 'さん、' : '') + '今週のテスト</h2>';
     if (!st.open || !st.round){
       h += '<div class="state"><span class="dot"></span>現在、テストの受付はしていません</div>';
@@ -343,25 +366,56 @@ details.reread .p-text{margin-top:10px}
       if (st.countSpeak) h += '<p class="muted">' + esc(lb.speak) + 'は、拼音を声に出して読み、録音します。静かな場所で受けてください。マイクの使用を聞かれたら「許可」を選んでください。</p>';
       h += '<button class="btn" type="button" id="startBtn">テストを受ける</button>';
     }
+    if (st.history.length) h += '<p class="muted">これまでに受けたテストの答えと解説は「過去の受験」で見られます。</p>';
     h += '</section>';
-    h += '<section class="card"><h2>これまでの結果</h2>';
-    if (!st.history.length){
-      h += '<p class="muted">まだ提出した回はありません。</p>';
-    } else {
-      h += '<ul class="hist">';
-      st.history.forEach(function(x){
-        h += '<li><span class="r">第' + esc(x.round) + '回</span><span class="d">' + esc(x.date) + '</span>' +
-             '<span class="s">' + (x.total ? x.correct + ' / ' + x.total : '録音提出') + '</span>' +
-             '<button class="btn ghost" type="button" data-result="' + esc(x.round) + '">見る</button></li>';
+    return h;
+  }
+
+  /* ---------- 過去の受験：受けた回を並べ、押すとその場で答えと解説を開く ---------- */
+  function pastHtml(st){
+    if (!st.history.length) return '<section class="card"><h2>過去の受験</h2><p class="muted">まだ提出した回はありません。</p></section>';
+    var h = '<p class="muted">回を押すと、問題ごとの正解・自分の答え・解説が見られます。</p><div class="past">';
+    st.history.forEach(function(x){
+      var r = esc(x.round), open = !!S.pastOpen[x.round];
+      h += '<div class="pr"><button type="button" class="pr-head" data-past="' + r + '" aria-expanded="' + open + '" aria-controls="pr-' + r + '">' +
+           '<span class="r">第' + r + '回</span><span class="d">' + esc(x.date) + '</span>' +
+           '<span class="s">' + (x.total ? x.correct + ' / ' + x.total : '録音提出') + '</span><span class="chev" aria-hidden="true"></span></button>' +
+           '<div class="pr-body" id="pr-' + r + '"' + (open ? '' : ' hidden') + '></div></div>';
+    });
+    return h + '</div>';
+  }
+  function pastBody(round){ return document.getElementById('pr-' + round); }
+  function fillPast(round){
+    var el = pastBody(round); if (!el) return;
+    var res = S.past[round];
+    if (!res){
+      el.innerHTML = '<p class="loading">読み込んでいます…</p>';
+      call('api_result', S.code, round).then(function(x){
+        if (!x.ok){ var e = pastBody(round); if (e) e.innerHTML = '<p class="error" role="alert">' + esc(x.error) + '</p>'; return; }
+        S.past[round] = x.result;
+        if (S.pastOpen[round]) fillPast(round);
+      }, function(){
+        var e = pastBody(round); if (e) e.innerHTML = '<p class="error" role="alert">' + esc(netError()) + '</p>';
+        delete S.pastOpen[round];
       });
-      h += '</ul>';
+      return;
     }
-    h += '</section>';
-    h += '<button class="link" type="button" id="logout">別のコードで入る</button>';
-    h += '<div id="installSlot"></div>';
-    app.innerHTML = h;
-    refreshInstall();
-    scrollTop();
+    el.innerHTML = resultBody(res, false, 'p' + round + '_', true) +
+      '<div class="close-row"><button type="button" class="btn ghost" data-past="' + esc(round) + '">第' + esc(round) + '回を閉じる</button></div>';
+  }
+  function togglePast(round){
+    var head = document.querySelector('.pr-head[data-past="' + round + '"]'), el = pastBody(round);
+    if (!head || !el) return;
+    stopAudio();
+    if (S.pastOpen[round]){
+      delete S.pastOpen[round];
+      head.setAttribute('aria-expanded', 'false'); el.hidden = true;
+      if (head.getBoundingClientRect().top < 0) head.scrollIntoView({ block: 'start' });
+      return;
+    }
+    S.pastOpen[round] = true;
+    head.setAttribute('aria-expanded', 'true'); el.hidden = false;
+    fillPast(round);
   }
 
   /* ---------- プレビュー（先生用） ---------- */
@@ -759,12 +813,21 @@ details.reread .p-text{margin-top:10px}
     }, function(){ if (btn) btn.disabled = false; alertInline(netError()); });
   }
   function renderResult(r, justSubmitted){
-    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
     stopAudio(); S.audioSrc = {};
+    app.innerHTML = resultBody(r, justSubmitted, '', false) +
+      '<button class="btn ghost" type="button" id="homeBtn">' + (r.preview ? 'プレビューに戻る' : 'ホームに戻る') + '</button>';
+    scrollTop();
+  }
+  // 1回分の結果の中身。pre は音声ボタンの名前の頭（いくつかの回を同じ画面に開くため）、inline は「過去の受験」の中に開くとき
+  function resultBody(r, justSubmitted, pre, inline){
+    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
+    S.audioSrc = S.audioSrc || {};
     var h = '<section class="card">';
     if (r.preview) h += '<p class="pv-banner">プレビューの結果です（記録はされていません）。</p>';
-    h += '<h2>第' + esc(r.round) + '回の結果</h2>';
-    h += '<div class="score">' + (r.total ? '<span class="big">' + r.correct + ' / ' + r.total + '</span>' : '') + '<span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
+    if (!inline){
+      h += '<h2>第' + esc(r.round) + '回の結果</h2>';
+      h += '<div class="score">' + (r.total ? '<span class="big">' + r.correct + ' / ' + r.total + '</span>' : '') + '<span class="muted">' + esc(r.date) + (justSubmitted && !r.preview ? '　提出しました' : '') + '</span></div>';
+    }
     if (speak.length && r.total) h += '<p class="muted">' + esc(lb.speak) + 'は先生が採点します（この点数には入りません）。</p>';
     if (items.length){
       if (reading.length || cloze.length || order.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
@@ -811,7 +874,7 @@ details.reread .p-text{margin-top:10px}
       h += '<ul class="ritems">';
       listen.forEach(function(q, i){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
-             '<span class="lq">' + (q.audio ? playHtml('r' + i, q, true) : '') + (q.text ? '<span>' + esc(q.text) + '</span>' : '') + '</span>' +
+             '<span class="lq">' + (q.audio ? playHtml(pre + 'r' + i, q, true) : '') + (q.text ? '<span>' + esc(q.text) + '</span>' : '') + '</span>' +
              '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>' +
              (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') +
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
@@ -819,6 +882,7 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     h += '</section>';
+    if (h === '<section class="card"></section>') h = ''; // 中身のないカードは出さない（スピーキングだけの回など）
     reading.forEach(function(p){
       h += '<section class="passage"><div class="p-head"><span class="p-tag">読解</span>' + (p.title ? '<b lang="zh-CN">' + esc(p.title) + '</b>' : '') + '</div>';
       if (p.text) h += '<details class="reread"><summary>本文を読み返す</summary><p class="p-text" lang="zh-CN">' + esc(p.text) + '</p>' + notesHtml(p.notes, true) + '</details>';
@@ -834,13 +898,13 @@ details.reread .p-text{margin-top:10px}
     if (speak.length){
       h += '<section class="card"><h2>' + esc(lb.speak) + '</h2><ul class="ritems">';
       speak.forEach(function(q, i){
-        var key = 'v' + i, play = '';
+        var key = pre + 'v' + i, play = '';
         if (q.audioUrl) S.audioSrc[key] = q.audioUrl;
         else if (q.audio) S.audioSrc[key] = 'data:' + q.audio.mime + ';base64,' + q.audio.data;
         if (S.audioSrc[key]) play = '<button type="button" class="play sm" data-play="' + key + '" aria-label="自分の録音を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">自分の録音</span></button>';
         if (q.model){
-          S.audioSrc['w' + i] = 'data:' + q.model.mime + ';base64,' + q.model.data;
-          play += '<button type="button" class="play sm" data-play="w' + i + '" aria-label="お手本を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">お手本</span></button>';
+          S.audioSrc[pre + 'w' + i] = 'data:' + q.model.mime + ';base64,' + q.model.data;
+          play += '<button type="button" class="play sm" data-play="' + pre + 'w' + i + '" aria-label="お手本を再生"><span class="ic">' + PLAY_SVG + '</span><span class="lb">お手本</span></button>';
         } else if (q.modelError) play += '<span class="audio-err">' + esc(q.modelError) + '</span>';
         var state = !q.recorded ? '録音なし' : r.preview ? 'プレビューなので保存していません' : q.grade ? '' : '先生の採点待ち';
         h += '<li><span class="m wait" aria-hidden="true">' + (i + 1) + '</span>' +
@@ -852,9 +916,7 @@ details.reread .p-text{margin-top:10px}
       });
       h += '</ul></section>';
     }
-    h += '<button class="btn ghost" type="button" id="homeBtn">' + (r.preview ? 'プレビューに戻る' : 'ホームに戻る') + '</button>';
-    app.innerHTML = h;
-    scrollTop();
+    return h;
   }
 
   /* ---------- イベント ---------- */
@@ -884,7 +946,9 @@ details.reread .p-text{margin-top:10px}
     else if (b.hasAttribute('data-play')){ if (REC.key != null) stopRec(); playAudio(b); }
     else if (b.hasAttribute('data-rec')) toggleRec(Number(b.getAttribute('data-rec')));
     else if (b.id === 'homeBtn'){ stopAudio(); app.innerHTML = '<p class="loading">読み込んでいます…</p>'; loadHome(); }
-    else if (b.id === 'logout'){ S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
+    else if (b.dataset.tab){ if (S.tab !== b.dataset.tab){ S.tab = b.dataset.tab; renderHome(); } }
+    else if (b.dataset.past) togglePast(b.dataset.past);
+    else if (b.id === 'logout'){ S.tab = 'now'; S.past = {}; S.pastOpen = {}; S.code = ''; S.status = null; S.pvOpts = null; S.cls = null; forgetCode(); renderLogin(); }
     else if (b.id === 'installBtn' && S.installEvt){ S.installEvt.prompt(); S.installEvt = null; refreshInstall(); }
     else if (b.dataset.result) openResult(b.dataset.result, b);
   });
