@@ -20,7 +20,7 @@ var SHEET = {
 };
 var HEAD = {
   students: ['コード', '表示名', 'メモ（学生には表示されません）'],
-  words: ['回', 'コード', '簡体字', '拼音', '意味'],
+  words: ['回', 'コード', '簡体字', '拼音', '意味', '形式（任意）'],
   subs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   detail: ['提出日時', '回', 'コード', '表示名', '簡体字', '拼音', '意味', '形式', '学生の解答', '正誤'],
   rtext: ['回', 'コード', '本文番号', 'タイトル', '本文', '語注（1行に1つ）'],
@@ -141,20 +141,21 @@ function setupSheets() {
   if (!ss.getSheetByName(SHEET.words)) {
     var w = ss.insertSheet(SHEET.words);
     var sample = [
-      [1, ALL, '你好', 'nǐ hǎo', 'こんにちは'],
-      [1, ALL, '谢谢', 'xièxie', 'ありがとう'],
-      [1, ALL, '老师', 'lǎoshī', '先生'],
-      [1, ALL, '朋友', 'péngyou', '友達'],
-      [1, ALL, '喜欢', 'xǐhuan', '好きだ'],
-      [1, ALL, '明天', 'míngtiān', '明日'],
-      [1, ALL, '吃饭', 'chī fàn', 'ご飯を食べる'],
-      [1, ALL, '学习', 'xuéxí', '勉強する']
+      [1, ALL, '你好', 'nǐ hǎo', 'こんにちは', ''],
+      [1, ALL, '谢谢', 'xièxie', 'ありがとう', ''],
+      [1, ALL, '老师', 'lǎoshī', '先生', ''],
+      [1, ALL, '朋友', 'péngyou', '友達', ''],
+      [1, ALL, '喜欢', 'xǐhuan', '好きだ', ''],
+      [1, ALL, '明天', 'míngtiān', '明日', ''],
+      [1, ALL, '吃饭', 'chī fàn', 'ご飯を食べる', ''],
+      [1, ALL, '学习', 'xuéxí', '勉強する', '']
     ];
     w.getRange(1, 1, 1, HEAD.words.length).setValues([HEAD.words]);
     w.getRange(2, 1, sample.length, HEAD.words.length).setValues(sample);
     w.getRange('B:B').setNumberFormat('@');
     styleHeader_(w, HEAD.words.length);
     w.setColumnWidth(5, 240);
+    w.getRange(1, 6).setNote('任意。この語の出し方を決めたいときだけ書きます（例：拼音→中）。「、」で区切って複数書けます。空なら「設定」の出題形式から選びます。');
     created.push(SHEET.words);
   }
 
@@ -863,14 +864,15 @@ function buildQuestions_(list, pool, s) {
 
   // 1) 語ごとに使える形式を決める（同じ意味・同じ拼音の語が同じ回にあると、正解が一つに決まらない形式は使えない）
   var items = list.map(function (w) {
-    var allowed = s.kinds.filter(function (k) {
+    var ok = function (k) {
       var pf = FIELD[k.charAt(0)], af = FIELD[k.charAt(1)];
       if (!w[pf] || !w[af]) return false;
       if (pf === 'meaning' && dupMeaning[key_('meaning', w.meaning)] > 1) return false;
       if (pf === 'pinyin' && dupPinyin[key_('pinyin', w.pinyin)] > 1) return false;
       return true;
-    });
-    return { w: w, allowed: allowed };
+    };
+    var fixed = (w.kinds || []).filter(ok); // 「形式（任意）」に書いた形式（使えるものだけ）。なければ「設定」の形式から選ぶ
+    return { w: w, allowed: fixed.length ? fixed : s.kinds.filter(ok) };
   });
 
   // 2) 形式ごとの出題数をできるだけ均等にする（18問・6形式なら各3問）
@@ -1029,9 +1031,20 @@ function allWords_() {
   return rows_(SHEET.words, HEAD.words.length)
     .map(function (r) {
       return { round: normRound_(r[0]), codes: norm_(r[1]),
-        hanzi: norm_(r[2]), pinyin: numToMark_(norm_(r[3])).normalize('NFC'), meaning: norm_(r[4]) };
+        hanzi: norm_(r[2]), pinyin: numToMark_(norm_(r[3])).normalize('NFC'), meaning: norm_(r[4]), kinds: wordKinds_(r[5]) };
     })
     .filter(function (w) { return w.hanzi && w.meaning; });
+}
+
+/** 「形式（任意）」の欄 → 形式の一覧（例：「拼音→中」「ピンイン→中国語」→ ['ph']）。空や読めないときは空の配列 */
+function wordKinds_(v) {
+  var t = norm_(v).replace(/ピンイン|ﾋﾟﾝｲﾝ|pinyin/gi, '拼音').replace(/中国語|簡体字|漢字/g, '中').replace(/日本語|意味/g, '日')
+    .replace(/\s*(->|→|⇒|＞|>)\s*/g, '→');
+  var out = [];
+  t.split(/[,、，\s\/／]+/).forEach(function (x) {
+    KINDS.forEach(function (k) { if (x && KIND_LABEL[k] === x && out.indexOf(k) < 0) out.push(k); });
+  });
+  return out;
 }
 
 function wordsFor_(code, round, pool) {
