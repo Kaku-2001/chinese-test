@@ -94,6 +94,12 @@ header h1{margin:0;font-size:1.45rem;line-height:1.35}
 .items .w .py{font-family:var(--f-zh);color:var(--sub);font-size:.9rem}
 .items .mean{grid-column:2}
 .items .yours{grid-column:2;font-size:.85rem;color:var(--ng)}
+.items .ol,.ritems .ol.all{grid-column:2;display:grid;gap:2px;font-size:.92rem;margin-top:2px}
+.items .ol .num,.ritems .ol.all .num{color:var(--sub);margin-right:.4em;font-family:var(--f-ja)}
+.items .ol .right-s,.ritems .ol .right-s{color:var(--ok);font-weight:700}
+.items .ol .wrong-s{color:var(--ng);font-weight:700}
+.items .ol .tag{margin-left:.5em;font-size:.75rem;font-family:var(--f-ja);border:1px solid currentColor;border-radius:4px;padding:0 4px;white-space:nowrap}
+.items .ol .zh-o{font-family:var(--f-zh)}
 .loading{color:var(--sub);text-align:center;padding:32px 0}
 .pv-banner{background:var(--jade-soft);color:var(--jade);border-radius:6px;padding:10px 12px;font-size:.9rem;font-weight:700;margin:0}
 .field select{padding:10px 12px;border:1px solid var(--line-strong);border-radius:6px;background:var(--card);width:100%;min-width:0}
@@ -877,7 +883,7 @@ button.pic-cell{cursor:zoom-in}
   function sendTest(btn, sAnswers){
     var answers = S.test.questions.map(function(q, i){
       var v = S.answers['q' + i];
-      return { type: q.type, prompt: q.prompt, choice: v != null ? q.options[v] : '' };
+      return { type: q.type, prompt: q.prompt, choice: v != null ? q.options[v] : '', options: q.options };
     });
     var rAnswers = [];
     S.test.reading.forEach(function(p, pi){
@@ -917,6 +923,7 @@ button.pic-cell{cursor:zoom-in}
       (res.result.listen || []).forEach(function(q, i){ var t = S.test.listen[i]; if (t && t.audio) q.audio = t.audio; }); // 結果でも聞き直せるように
       (res.result.speak || []).forEach(function(q, i){ var r = S.rec[i]; if (r) q.audioUrl = r.url; });
       (res.result.pic || []).forEach(function(gr, i){ var t = S.test.pic[i]; if (t) gr.images = t.images; }); // 結果でも同じ絵を出す
+      fillOptions(res.result);
       bar.hidden = true; S.test = null; renderResult(res.result, true);
     }, function(){
       btn.disabled = false; btn.textContent = '提出する';
@@ -939,6 +946,29 @@ button.pic-cell{cursor:zoom-in}
     scrollTop();
   }
   // 1回分の結果の中身。pre は音声ボタンの名前の頭（いくつかの回を同じ画面に開くため）、inline は「過去の受験」の中に開くとき
+  // 結果に選択肢がないとき（前の版の Apps Script）は、いま解いた問題の選択肢を添える
+  function fillOptions(r){
+    var t = S.test, put = function(q, src){ if (q && src && !(q.options && q.options.length)) q.options = src.options; };
+    (r.items || []).forEach(function(x){
+      var pf = ANS_FIELD[String(x.type || '').charAt(0)];
+      t.questions.forEach(function(q){ if (pf && q.type === x.type && q.prompt === x[pf]) put(x, q); });
+    });
+    (r.cloze || []).forEach(function(x, i){ put(x, t.cloze[i]); });
+    (r.listen || []).forEach(function(x, i){ put(x, t.listen[i]); });
+    (r.reading || []).forEach(function(p, pi){ var tp = t.reading[pi]; if (tp) p.questions.forEach(function(x, qi){ put(x, tp.questions[qi]); }); });
+  }
+  // 全部の選択肢。正解は緑、自分が選んだ答え（まちがい）は赤で示す
+  function allOpts(options, answer, choice, zh){
+    if (!options || options.length < 2) return '';
+    return '<span class="ol all">' + options.map(function(o, j){
+      var right = o === answer, mine = !!choice && o === choice;
+      return '<span' + (right ? ' class="right-s"' : mine ? ' class="wrong-s"' : '') + '><span class="num">' + 'ABCDEFGH'.charAt(j) + '</span>' +
+        '<span' + (zh ? ' class="zh-o" lang="zh-CN"' : '') + '>' + esc(o) + '</span>' +
+        (right ? '<span class="tag">正解' + (mine ? '・あなたの解答' : '') + '</span>' : mine ? '<span class="tag">あなたの解答</span>' : '') + '</span>';
+    }).join('') + '</span>';
+  }
+  function hasOpt(q){ return q.options && q.options.length >= 2 && q.options.indexOf(q.answer) >= 0; }
+  var ANS_FIELD = { h: 'hanzi', p: 'pinyin', m: 'meaning' };
   function resultBody(r, justSubmitted, pre, inline){
     var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], pic = r.pic || [], lb = labels(r);
     S.audioSrc = S.audioSrc || {};
@@ -955,8 +985,11 @@ button.pic-cell{cursor:zoom-in}
       items.forEach(function(x){
         h += '<li><span class="m ' + (x.ok ? 'ok' : 'ng') + '" aria-label="' + (x.ok ? '正解' : '不正解') + '">' + (x.ok ? '○' : '×') + '</span>' +
              '<span class="w"><span class="zh" lang="zh-CN">' + esc(x.hanzi) + '</span>' + (x.pinyin ? '<span class="py" lang="zh-Latn">' + esc(x.pinyin) + '</span>' : '') + '</span>' +
-             '<span class="mean">' + esc(x.meaning) + '</span>' +
-             (x.ok ? '' : '<span class="yours">あなたの解答：' + (x.choice ? esc(x.choice) : '未回答') + '</span>') + '</li>';
+             '<span class="mean">' + esc(x.meaning) + '</span>';
+        var af = ANS_FIELD[String(x.type || '').charAt(1)], xa = af ? x[af] : '';
+        if (xa && x.options && x.options.indexOf(xa) >= 0)
+          h += allOpts(x.options, xa, x.choice, af !== 'meaning') + (x.ok || x.choice ? '' : '<span class="yours">あなたの解答：未回答</span>') + '</li>';
+        else h += (x.ok ? '' : '<span class="yours">あなたの解答：' + (x.choice ? esc(x.choice) : '未回答') + '</span>') + '</li>';
       });
       h += '</ul>';
     }
@@ -967,8 +1000,9 @@ button.pic-cell{cursor:zoom-in}
         var blank = hasBlank(q.text);
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
              '<span class="qt" lang="zh-CN">' + clozeHtml(q.text, blank ? q.answer : null) + '</span>' +
+             (hasOpt(q) ? allOpts(q.options, q.answer, q.choice, true) + (q.choice ? '' : '<span class="yours">あなたの解答：未回答</span>') :
              (blank ? '' : '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>') +
-             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') +
+             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>')) +
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
       });
       h += '</ul>';
@@ -995,8 +1029,9 @@ button.pic-cell{cursor:zoom-in}
       listen.forEach(function(q, i){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
              '<span class="lq">' + (q.audio ? playHtml(pre + 'r' + i, q, true) : '') + (q.text ? '<span>' + esc(q.text) + '</span>' : '') + '</span>' +
+             (hasOpt(q) ? allOpts(q.options, q.answer, q.choice, true) + (q.choice ? '' : '<span class="yours">あなたの解答：未回答</span>') :
              '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>' +
-             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') +
+             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>')) +
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
       });
       h += '</ul>';
@@ -1025,8 +1060,9 @@ button.pic-cell{cursor:zoom-in}
       p.questions.forEach(function(q){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
              '<span class="qt" lang="zh-CN">' + esc(q.text) + '</span>' +
+             (hasOpt(q) ? allOpts(q.options, q.answer, q.choice, true) + (q.choice ? '' : '<span class="yours">あなたの解答：未回答</span>') :
              '<span class="ca">正解：<span lang="zh-CN">' + esc(q.answer) + '</span></span>' +
-             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>') + '</li>';
+             (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? esc(q.choice) : '未回答') + '</span>')) + '</li>';
       });
       h += '</ul></section>';
     });
