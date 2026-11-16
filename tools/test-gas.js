@@ -370,4 +370,42 @@ for (var rep = 0; rep < 30; rep++) {
 r = gs.call('api_submit', PREVIEW, '1', t.questions.map(function (q) { return { type: q.type, prompt: q.prompt, choice: q.prompt === 'xuésheng' ? '学生' : q.options[0] }; }), [], { round: '1' }, [], []);
 assert.ok(r.ok && r.result.items.filter(function (d) { return d.hanzi === '学生'; })[0].ok, JSON.stringify(r));
 
+// 10) 過去の結果に全部の選択肢を出す
+gs = sim.load(tables());
+t = gs.call('api_start', STUDENT);
+a = answersFor(t);
+a[0] = t.questions.map(function (q) { return { type: q.type, prompt: q.prompt, choice: q.options[1], options: q.options }; });
+a[1][0].choice = '切る'; // 読解の1問目はわざとまちがえる
+r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3]);
+assert.ok(r.ok, JSON.stringify(r));
+assert.strictEqual(r.result.items.length, 4);
+r.result.items.forEach(function (d, i) { assert.deepStrictEqual(d.options, t.questions[i] && t.questions.filter(function (q) { return q.prompt === d[{ h: 'hanzi', p: 'pinyin', m: 'meaning' }[d.type.charAt(0)]]; })[0].options); });
+assert.deepStrictEqual(r.result.cloze[1].options, ['hǎo', 'hào', 'hāo', 'háo']);
+assert.deepStrictEqual(r.result.listen[0].options, ['mā', 'má', 'mǎ', 'mà']);
+assert.deepStrictEqual(r.result.reading[0].questions[0].options, ['píをむく', '切る', 'qiēる', 'zhǔ']);
+var dd = gs.sheets['解答明細'];
+assert.strictEqual(dd[0][10], '選択肢');
+assert.strictEqual(dd[1][10].split('\n').length, 4);
+res = gs.call('api_result', STUDENT, '1');
+assert.ok(res.ok, JSON.stringify(res));
+res.result.items.forEach(function (d, i) { assert.deepStrictEqual(d.options, r.result.items[i].options); });
+assert.deepStrictEqual(res.result.cloze.map(function (q) { return q.options; }), [['条', '件', '本', '张'], ['hǎo', 'hào', 'hāo', 'háo']]);
+assert.deepStrictEqual(res.result.listen[0].options, ['mā', 'má', 'mǎ', 'mà']);
+assert.deepStrictEqual(res.result.reading[0].questions[0].options, ['píをむく', '切る', 'qiēる', 'zhǔ']);
+assert.strictEqual(res.result.reading[0].questions[0].choice, '切る');
+// 「選択肢」の列がない前の記録では、単語の選択肢は出さない（ほかの形式は問題シートから出す）
+dd.forEach(function (row) { row.length = 10; });
+res = gs.call('api_result', STUDENT, '1');
+res.result.items.forEach(function (d) { assert.deepStrictEqual(d.options, []); });
+// 問題シートを書き換えて正解が選択肢にない古い記録には、選択肢を出さない
+gs.sheets['穴埋め'][2] = [1, '全員', '我昨天买了一（　）新衣服。', '条', '个', '本', '张', 'B', ''];
+res = gs.call('api_result', STUDENT, '1');
+assert.deepStrictEqual(res.result.cloze[0].options, []);
+// 古い画面（選択肢を送らない）からの提出でも記録できる
+gs = sim.load(tables());
+t = gs.call('api_start', STUDENT); a = answersFor(t);
+r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3]);
+assert.ok(r.ok && r.result.items.every(function (d) { return d.options.length === 0; }), JSON.stringify(r));
+assert.strictEqual(gs.sheets['解答明細'][1][10], '');
+
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');
