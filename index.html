@@ -159,6 +159,26 @@ details.reread .p-text{margin-top:10px}
 @media (prefers-reduced-motion: no-preference){ .rec-btn.on .rd{animation:blink 1s steps(2,start) infinite} @keyframes blink{to{visibility:hidden}} }
 [hidden]{display:none!important}
 @media (prefers-reduced-motion: no-preference){ .opt{transition:background-color .12s,border-color .12s} }
+/* ---- イラスト（絵を見て選ぶ） ---- */
+.pic-set{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;display:grid;gap:10px}
+.pic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:10px}
+.pic-grid.sm{grid-template-columns:repeat(auto-fill,minmax(5.5rem,1fr));gap:8px}
+.pic-cell{position:relative;margin:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#fff;aspect-ratio:4/3;display:grid;place-items:center}
+.pic-cell img{width:100%;height:100%;object-fit:contain;display:block}
+.pic-cell .pl{position:absolute;top:4px;left:4px;font-weight:700;font-size:.85rem;background:var(--card);color:var(--ink);border:1px solid var(--line-strong);border-radius:4px;width:1.6rem;text-align:center;line-height:1.5}
+.pic-err{margin:0;font-size:.78rem;color:var(--ng);padding:6px 6px 6px 2.2rem;line-height:1.4}
+.pic-text{margin:0;font-family:var(--f-zh);font-size:1.15rem;font-weight:500;line-height:1.6}
+.pic-py{display:block;font-size:.85rem;color:var(--sub);font-weight:400;line-height:1.4}
+.pic-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(4.2rem,1fr));gap:8px}
+.pic-opt{position:relative;border:1px solid var(--line);border-radius:6px;padding:4px 4px 2px;cursor:pointer;display:grid;gap:2px;justify-items:center}
+.pic-opt input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.pic-opt img,.pic-opt .ph{width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border-radius:4px;display:block}
+.pic-opt b{font-size:.9rem}
+.pic-opt:has(input:checked){border-color:var(--jade);background:var(--jade-soft);box-shadow:0 0 0 2px var(--jade)}
+.pic-opt:has(input:focus-visible){outline:2px solid var(--jade);outline-offset:2px}
+.ritems .pa{display:inline-flex;align-items:center;gap:6px;vertical-align:middle}
+.ritems .pa img{width:2.4rem;height:2.4rem;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:4px}
+@media (prefers-reduced-motion: no-preference){ .pic-opt{transition:background-color .12s,border-color .12s} }
 /* ---- アプリ用 ---- */
 .install{border:1px dashed var(--line-strong);border-radius:8px;padding:12px 14px;display:grid;gap:8px}
 .install b{font-size:.92rem}
@@ -356,10 +376,11 @@ details.reread .p-text{margin-top:10px}
       if (st.countCloze) parts.push(lb.cloze + st.countCloze);
       if (st.countOrder) parts.push(lb.order + st.countOrder);
       if (st.countListen) parts.push(lb.listen + st.countListen);
+      if (st.countPic) parts.push(lb.pic + st.countPic);
       if (st.countReading) parts.push('読解' + st.countReading);
       if (st.countSpeak) parts.push(lb.speak + st.countSpeak);
       var kinds = parts.length > 1 ? '（' + parts.join('・') + '）'
-                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countOrder ? '（' + lb.order + '）' : st.countListen ? '（' + lb.listen + '）'
+                : st.countReading ? '（読解）' : st.countCloze ? '（' + lb.cloze + '）' : st.countOrder ? '（' + lb.order + '）' : st.countListen ? '（' + lb.listen + '）' : st.countPic ? '（' + lb.pic + '）'
                 : st.countSpeak ? '（' + lb.speak + '）' : '';
       h += '<div class="state"><span class="dot go"></span>第' + esc(st.round) + '回　全' + st.count + '問' + kinds + '</div>';
       h += '<p class="muted">提出できるのは1回だけです。すべて答えてから提出してください。</p>';
@@ -470,7 +491,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code, opts).then(function(res){
       if (!res.ok){ renderPreviewHome(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.test.pic = res.pic || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'この内容で受けてみる'; alertInline(netError()); });
   }
 
@@ -480,7 +501,7 @@ details.reread .p-text{margin-top:10px}
     btn.disabled = true; btn.textContent = '問題を準備しています…';
     call('api_start', S.code).then(function(res){
       if (!res.ok){ loadHomeWith(res.error); return; }
-      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.answers = {}; resetRec(); renderTest();
+      S.test = res; S.test.reading = res.reading || []; S.test.cloze = res.cloze || []; S.test.order = res.order || []; S.test.listen = res.listen || []; S.test.speak = res.speak || []; S.test.pic = res.pic || []; S.answers = {}; resetRec(); renderTest();
     }, function(){ btn.disabled = false; btn.textContent = 'テストを受ける'; alertInline(netError()); });
   }
   function loadHomeWith(msg){
@@ -493,11 +514,12 @@ details.reread .p-text{margin-top:10px}
   function totalCount(){
     var n = S.test.questions.length + S.test.cloze.length + S.test.order.length + S.test.listen.length + S.test.speak.length;
     S.test.reading.forEach(function(p){ n += p.questions.length; });
+    S.test.pic.forEach(function(g){ n += g.questions.length; });
     return n;
   }
   function renderTest(){
     var t = S.test, h = '', no = 0, lb = labels(t);
-    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.order.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.reading.length ? 1 : 0) + (t.speak.length ? 1 : 0) > 1;
+    var multi = (t.questions.length ? 1 : 0) + (t.cloze.length ? 1 : 0) + (t.order.length ? 1 : 0) + (t.listen.length ? 1 : 0) + (t.pic.length ? 1 : 0) + (t.reading.length ? 1 : 0) + (t.speak.length ? 1 : 0) > 1;
     stopAudio(); S.audioSrc = {};
     S.groups = [];
     if (t.preview) h += '<p class="pv-banner">プレビュー中：第' + esc(t.round) + '回／' + esc(S.pvLabel || '') + '。提出しても記録は残りません。</p>';
@@ -551,6 +573,25 @@ details.reread .p-text{margin-top:10px}
       if (q.text) h += '<p class="lq-text">' + esc(q.text) + '</p>';
       h += keyedOpts(g, no, q.options) + '</section>';
     });
+    if (t.pic.length && multi) h += '<h2 class="sec-title">' + esc(lb.pic) + '</h2>';
+    t.pic.forEach(function(gr, gi){
+      h += '<section class="pic-set"><p class="muted">下の文に合う絵を、' + gr.images.map(function(im){ return im.letter; }).join('・') + ' から1つずつ選んでください。</p>' +
+           picGrid(gr.images, false) + '</section>';
+      gr.questions.forEach(function(q, qi){
+        var g = 'p' + gi + '_' + qi;
+        no++; S.groups.push(g);
+        h += '<section class="q" id="' + g + '">';
+        h += '<div class="q-head"><b>問' + no + '</b><span>合う絵を選ぶ</span></div>';
+        h += '<p class="pic-text" lang="zh-CN">' + picTextHtml(q) + '</p>';
+        h += '<div class="pic-opts" role="radiogroup" aria-label="問' + no + 'の選択肢">';
+        gr.images.forEach(function(im, j){
+          var id = g + 'o' + j, src = picSrc(im);
+          h += '<label class="pic-opt" for="' + id + '"><input type="radio" id="' + id + '" name="' + g + '" value="' + j + '">' +
+               (src ? '<img src="' + src + '" alt="">' : '<span class="ph" aria-hidden="true"></span>') + '<b>' + esc(im.letter) + '</b></label>';
+        });
+        h += '</div></section>';
+      });
+    });
     if (t.reading.length && multi) h += '<h2 class="sec-title">読解</h2>';
     t.reading.forEach(function(p, pi){
       h += '<section class="passage"><div class="p-head"><span class="p-tag">読解</span>' + (p.title ? '<b lang="zh-CN">' + esc(p.title) + '</b>' : '') + '</div>' +
@@ -580,7 +621,34 @@ details.reread .p-text{margin-top:10px}
     renderBar();
     scrollTop();
   }
-  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', order: l.order || '並べ替え', listen: l.listen || '聴解', speak: l.speak || 'スピーキング' }; }
+  function labels(o){ var l = (o && o.labels) || {}; return { cloze: l.cloze || '穴埋め', order: l.order || '並べ替え', listen: l.listen || '聴解', speak: l.speak || 'スピーキング', pic: l.pic || 'イラスト' }; }
+
+  /* ---------- 絵（イラスト） ---------- */
+  // 届いた絵（base64）は一度だけ画像のURLにして、テストと結果の画面で使い回す
+  function picSrc(im){
+    if (!im || !im.image) return '';
+    if (im._url) return im._url;
+    try {
+      var bin = atob(im.image.data), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      im._url = URL.createObjectURL(new Blob([bytes], { type: im.image.mime }));
+    } catch (e) { im._url = 'data:' + im.image.mime + ';base64,' + im.image.data; }
+    return im._url;
+  }
+  function picGrid(images, small){
+    return '<div class="pic-grid' + (small ? ' sm' : '') + '">' + images.map(function(im){
+      var src = picSrc(im);
+      return '<figure class="pic-cell"><span class="pl">' + esc(im.letter) + '</span>' +
+        (src ? '<img src="' + src + '" alt="絵' + esc(im.letter) + '">' : '<p class="pic-err">' + esc(im.error || '絵を読み込めませんでした') + '</p>') + '</figure>';
+    }).join('') + '</div>';
+  }
+  function picTextHtml(q){ return (q.pinyin ? '<span class="pic-py" lang="zh-Latn">' + esc(q.pinyin) + '</span>' : '') + esc(q.text); }
+  function picAns(images, letter){ // 記号と小さな絵
+    var im = null;
+    (images || []).forEach(function(x){ if (x.letter === letter) im = x; });
+    var src = picSrc(im);
+    return '<span class="pa"><b>' + esc(letter) + '</b>' + (src ? '<img src="' + src + '" alt="">' : '') + '</span>';
+  }
   var NUMS = '①②③④';
   function pickWrong(p){ return p !== '正しい'; } // 「正しい」が届かないとき（前の版のサーバー）は、正しくないものを選ぶ問題
   function pickHtml(p){ return pickWrong(p) ? '<b class="neg">正しくないもの</b>' : '<b class="pos">正しいもの</b>'; }
@@ -809,7 +877,14 @@ details.reread .p-text{margin-top:10px}
       var v = S.answers['l' + i];
       return { i: i, choice: v != null ? q.options[v] : '' };
     });
-    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers, sAnswers, oAnswers).then(function(res){
+    var pAnswers = [];
+    S.test.pic.forEach(function(gr, gi){
+      gr.questions.forEach(function(q, qi){
+        var v = S.answers['p' + gi + '_' + qi];
+        pAnswers.push({ g: gi, i: qi, choice: v != null && gr.images[v] ? gr.images[v].letter : '' });
+      });
+    });
+    call('api_submit', S.code, S.test.round, answers, rAnswers, S.test.preview ? S.pvOpts : null, cAnswers, lAnswers, sAnswers, oAnswers, pAnswers).then(function(res){
       if (!res.ok){
         if (S.test.speak.length && /録音/.test(res.error || '')){ // 録音の問題なら、テストの画面のまま録り直せるようにする
           btn.disabled = false; btn.textContent = '提出する';
@@ -820,6 +895,7 @@ details.reread .p-text{margin-top:10px}
       }
       (res.result.listen || []).forEach(function(q, i){ var t = S.test.listen[i]; if (t && t.audio) q.audio = t.audio; }); // 結果でも聞き直せるように
       (res.result.speak || []).forEach(function(q, i){ var r = S.rec[i]; if (r) q.audioUrl = r.url; });
+      (res.result.pic || []).forEach(function(gr, i){ var t = S.test.pic[i]; if (t) gr.images = t.images; }); // 結果でも同じ絵を出す
       bar.hidden = true; S.test = null; renderResult(res.result, true);
     }, function(){
       btn.disabled = false; btn.textContent = '提出する';
@@ -843,7 +919,7 @@ details.reread .p-text{margin-top:10px}
   }
   // 1回分の結果の中身。pre は音声ボタンの名前の頭（いくつかの回を同じ画面に開くため）、inline は「過去の受験」の中に開くとき
   function resultBody(r, justSubmitted, pre, inline){
-    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], lb = labels(r);
+    var items = r.items || [], reading = r.reading || [], cloze = r.cloze || [], order = r.order || [], listen = r.listen || [], speak = r.speak || [], pic = r.pic || [], lb = labels(r);
     S.audioSrc = S.audioSrc || {};
     var h = '<section class="card">';
     if (r.preview) h += '<p class="pv-banner">プレビューの結果です（記録はされていません）。</p>';
@@ -853,7 +929,7 @@ details.reread .p-text{margin-top:10px}
     }
     if (speak.length && r.total) h += '<p class="muted">' + esc(lb.speak) + 'は先生が採点します（この点数には入りません）。</p>';
     if (items.length){
-      if (reading.length || cloze.length || order.length || listen.length) h += '<h2 class="sec-title">単語</h2>';
+      if (reading.length || cloze.length || order.length || listen.length || pic.length) h += '<h2 class="sec-title">単語</h2>';
       h += '<ul class="items">';
       items.forEach(function(x){
         h += '<li><span class="m ' + (x.ok ? 'ok' : 'ng') + '" aria-label="' + (x.ok ? '正解' : '不正解') + '">' + (x.ok ? '○' : '×') + '</span>' +
@@ -864,7 +940,7 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     if (cloze.length){
-      if (items.length || reading.length || order.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
+      if (items.length || reading.length || order.length || listen.length || pic.length) h += '<h2 class="sec-title">' + esc(lb.cloze) + '</h2>';
       h += '<ul class="ritems">';
       cloze.forEach(function(q){
         var blank = hasBlank(q.text);
@@ -877,7 +953,7 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     if (order.length){
-      if (items.length || reading.length || cloze.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.order) + '</h2>';
+      if (items.length || reading.length || cloze.length || listen.length || pic.length) h += '<h2 class="sec-title">' + esc(lb.order) + '</h2>';
       h += '<ul class="ritems">';
       order.forEach(function(q){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
@@ -893,7 +969,7 @@ details.reread .p-text{margin-top:10px}
       h += '</ul>';
     }
     if (listen.length){
-      if (items.length || reading.length || cloze.length || order.length) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
+      if (items.length || reading.length || cloze.length || order.length || pic.length) h += '<h2 class="sec-title">' + esc(lb.listen) + '</h2>';
       h += '<ul class="ritems">';
       listen.forEach(function(q, i){
         h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
@@ -903,6 +979,21 @@ details.reread .p-text{margin-top:10px}
              (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
       });
       h += '</ul>';
+    }
+    if (pic.length){
+      if (items.length || reading.length || cloze.length || order.length || listen.length) h += '<h2 class="sec-title">' + esc(lb.pic) + '</h2>';
+      pic.forEach(function(gr){
+        if (gr.images && gr.images.length) h += '<details class="reread"><summary>絵を見る</summary><div style="margin-top:10px">' + picGrid(gr.images, true) + '</div></details>';
+        h += '<ul class="ritems">';
+        gr.questions.forEach(function(q){
+          h += '<li><span class="m ' + (q.ok ? 'ok' : 'ng') + '" aria-label="' + (q.ok ? '正解' : '不正解') + '">' + (q.ok ? '○' : '×') + '</span>' +
+               '<span class="qt" lang="zh-CN">' + picTextHtml(q) + '</span>' +
+               '<span class="ca">正解：' + picAns(gr.images, q.answer) + '</span>' +
+               (q.ok ? '' : '<span class="yours">あなたの解答：' + (q.choice ? picAns(gr.images, q.choice) : '未回答') + '</span>') +
+               (q.note ? '<span class="note">' + esc(q.note) + '</span>' : '') + '</li>';
+        });
+        h += '</ul>';
+      });
     }
     h += '</section>';
     if (h === '<section class="card"></section>') h = ''; // 中身のないカードは出さない（スピーキングだけの回など）
@@ -945,7 +1036,7 @@ details.reread .p-text{margin-top:10px}
   /* ---------- イベント ---------- */
   document.addEventListener('change', function(e){
     var g = e.target.name;
-    if (!g || !/^(q\d+|c\d+|o\d+|l\d+|r\d+_\d+)$/.test(g) || !S.test) return;
+    if (!g || !/^(q\d+|c\d+|o\d+|l\d+|r\d+_\d+|p\d+_\d+)$/.test(g) || !S.test) return;
     S.answers[g] = Number(e.target.value);
     var sec = document.getElementById(g); if (sec) sec.classList.remove('unanswered');
     if (!bar.querySelector('#confirmBtn')) renderBar();

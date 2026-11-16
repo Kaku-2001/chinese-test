@@ -2,8 +2,8 @@
  * 中国語 単語テスト（Googleスプレッドシート + Apps Script）
  *
  * 学生は受験コードで入り、「今週の回」のテストを1回だけ受けられる。
- * 出題は 単語（語リスト）・穴埋め・並べ替え（語順の違う文から正しいもの、または正しくないものを1つ選ぶ）・聴解（音声を聞いて選ぶ）・読解・
- * スピーキング（指定した拼音を発音して録音）の組み合わせ。
+ * 出題は 単語（語リスト）・穴埋め・並べ替え（語順の違う文から正しいもの、または正しくないものを1つ選ぶ）・聴解（音声を聞いて選ぶ）・
+ * イラスト（絵 A〜F を見て、文に合う絵を選ぶ）・読解・スピーキング（指定した拼音を発音して録音）の組み合わせ。
  * スピーキングの録音はGoogleドライブの「録音フォルダ」に保存し、評価は先生が「スピーキング提出」シートに書き込む。
  * 結果は「提出」「解答明細」などのシートに溜まり、学生は自分の結果だけを何度でも見られる。
  * 採点はすべてサーバー側で行い、正解は提出前の画面には送らない。
@@ -15,7 +15,8 @@ var SHEET = {
   cloze: '穴埋め', csubs: '穴埋め提出', cdetail: '穴埋め明細',
   order: '並べ替え', osubs: '並べ替え提出', odetail: '並べ替え明細',
   listen: '聴解', lsubs: '聴解提出', ldetail: '聴解明細',
-  speak: 'スピーキング', sdetail: 'スピーキング提出'
+  speak: 'スピーキング', sdetail: 'スピーキング提出',
+  pic: 'イラスト', pimg: 'イラストの絵', psubs: 'イラスト提出', pdetail: 'イラスト明細'
 };
 var HEAD = {
   students: ['コード', '表示名', 'メモ（学生には表示されません）'],
@@ -36,9 +37,13 @@ var HEAD = {
   lsubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
   ldetail: ['提出日時', '回', 'コード', '表示名', '音声ファイル名', '問題文', '正解', '学生の解答', '正誤'],
   speak: ['回', 'コード', '拼音（発音してもらう）', '補足（任意）', 'お手本の音声ファイル名（任意）', '録音の長さ（秒・任意）'],
-  sdetail: ['提出日時', '回', 'コード', '表示名', '課題', '録音', '評価（先生が入力）', 'コメント（先生が入力）']
+  sdetail: ['提出日時', '回', 'コード', '表示名', '課題', '録音', '評価（先生が入力）', 'コメント（先生が入力）'],
+  pimg: ['回', '組', '絵A', '絵B', '絵C', '絵D', '絵E', '絵F'],
+  pic: ['回', 'コード', '組', '文', '拼音（任意）', '正解（A〜F）', '解説（任意）'],
+  psubs: ['提出日時', '回', 'コード', '表示名', '正答数', '問題数', '正答率'],
+  pdetail: ['提出日時', '回', 'コード', '表示名', '組', '文', '正解', '学生の解答', '正誤']
 };
-var RESULT_SHEETS = ['subs', 'rsubs', 'csubs', 'lsubs', 'osubs']; // 回ごとの点数を記録するシート（単語・読解・穴埋め・聴解・並べ替え）
+var RESULT_SHEETS = ['subs', 'rsubs', 'csubs', 'lsubs', 'osubs', 'psubs']; // 回ごとの点数を記録するシート（単語・読解・穴埋め・聴解・並べ替え・イラスト）
 // 後から追加した設定。「初期設定」を押すと、今ある「設定」シートの下に足される
 var EXTRA_SETTINGS = [
   ['穴埋めの見出し', '穴埋め', '「穴埋め」シートの問題の見出し。空欄のない4択（拼音の規則の問題など）に使うときは「拼音」などに変えられます'],
@@ -46,7 +51,9 @@ var EXTRA_SETTINGS = [
   ['並べ替えの見出し', '並べ替え', '「並べ替え」シートの問題の見出し'],
   ['音声フォルダ', '', '聴解の音声ファイルを入れるGoogleドライブのフォルダのURL。空なら「初期設定」で自動で作ります'],
   ['スピーキングの見出し', 'スピーキング', '「スピーキング」シートの課題の見出し'],
-  ['録音フォルダ', '', 'スピーキングで学生が録音した音声を保存するGoogleドライブのフォルダのURL（学生ごとのフォルダに分けて保存）。空なら自動で作ります']
+  ['録音フォルダ', '', 'スピーキングで学生が録音した音声を保存するGoogleドライブのフォルダのURL（学生ごとのフォルダに分けて保存）。空なら自動で作ります'],
+  ['イラストの見出し', 'イラスト', '「イラスト」シートの問題の見出し'],
+  ['画像フォルダ', '', 'イラストの問題の絵（画像）を入れるGoogleドライブのフォルダのURL。空なら「初期設定」で自動で作ります']
 ];
 var AUDIO_MAX = 3 * 1024 * 1024; // 1ファイル3MBまで
 var SPEAK_SEC = 20, SPEAK_SEC_MAX = 180; // スピーキングの録音の長さ（秒）：書いていないときの長さと、上限
@@ -56,6 +63,9 @@ var UNRECORDED = '（録音なし）';
 var AUDIO_MIME = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
   oga: 'audio/ogg', opus: 'audio/ogg', webm: 'audio/webm', flac: 'audio/flac', caf: 'audio/x-caf', '3gp': 'audio/3gpp', amr: 'audio/amr' };
 var LETTERS = ['A', 'B', 'C', 'D'];
+var PIC_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']; // イラストの絵の記号
+var IMAGE_MAX = 1024 * 1024; // 絵は1枚1MBまで
+var IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 var MARUNUM = ['①', '②', '③', '④'];
 var PICK_WRONG = '正しくない', PICK_RIGHT = '正しい'; // 並べ替えで選ぶもの
 var TZ = 'Asia/Tokyo';
@@ -264,6 +274,39 @@ function setupSheets() {
     sp.setColumnWidth(4, 260);
     created.push(SHEET.speak);
   }
+  if (!ss.getSheetByName(SHEET.pimg)) {
+    var pm = ss.insertSheet(SHEET.pimg);
+    var pmex = [[EXAMPLE, 1, 'tennis', 'book', 'tea', '', '', '']]; // 回が「例」の行は出題されない（入力の見本）
+    pm.getRange(1, 1, 1, HEAD.pimg.length).setValues([HEAD.pimg]);
+    pm.getRange(2, 1, pmex.length, HEAD.pimg.length).setValues(pmex).setFontColor('#9AA5A1').setFontStyle('italic');
+    pm.getRange('C:H').setNumberFormat('@');
+    styleHeader_(pm, HEAD.pimg.length);
+    pm.getRange(1, 2).setNote('同じ回の中の絵のまとまりの番号（1、2…）。空なら1。\n「イラスト」シートの問題は、同じ回・同じ組の絵から選びます。');
+    pm.getRange(1, 3).setNote('「設定」シートの「画像フォルダ」に入れた絵のファイルの名前（拡張子 .jpg などは省略できます）。\n1つの組に2〜6枚。使わない欄は空のままにします。\njpg・png・gif・webp が使えます（1枚1MBまで。300KBくらいまでだと早く開きます）。');
+    created.push(SHEET.pimg);
+  }
+  if (!ss.getSheetByName(SHEET.pic)) {
+    var pc = ss.insertSheet(SHEET.pic);
+    var pcex = [ // 回が「例」の行は出題されない（入力の見本）
+      [EXAMPLE, ALL, 1, '我每个星期六都去打网球。', 'Wo3 mei3 ge xing1qi1liu4 dou1 qu4 da3 wang3qiu2.', 'A', '「打网球」＝テニスをする'],
+      [EXAMPLE, ALL, 1, '这本书很有意思。', '', 'B', '']
+    ];
+    pc.getRange(1, 1, 1, HEAD.pic.length).setValues([HEAD.pic]);
+    pc.getRange(2, 1, pcex.length, HEAD.pic.length).setValues(pcex).setFontColor('#9AA5A1').setFontStyle('italic');
+    pc.getRange('B:B').setNumberFormat('@');
+    pc.getRange('D:G').setWrap(true);
+    pc.getRange(2, 6, 999, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(PIC_LETTERS, true).build());
+    styleHeader_(pc, HEAD.pic.length);
+    pc.getRange(1, 3).setNote('「イラストの絵」シートの組の番号。空なら1。\n同じ組の絵を何問かで使えます（同じ絵が2回答えになってもかまいません）。');
+    pc.getRange(1, 4).setNote('学生は、この文に合う絵を A〜F から1つ選びます。\n「コード」は「全員」または学生のコード（「,」で区切って何人分も書けます）。\n回が「例」の行は出題されません（入力の見本）。');
+    pc.getRange(1, 5).setNote('任意。文の上に小さく表示します。ni3 hao3 のように数字でも書けます（画面では nǐ hǎo）。');
+    pc.getRange(1, 6).setNote('合う絵の記号（A〜F）。「イラストの絵」のその組で、絵が入っている記号にします。');
+    pc.getRange(1, 7).setNote('任意。学生が結果画面で見られます。');
+    pc.setColumnWidth(4, 300);
+    pc.setColumnWidth(5, 260);
+    pc.setColumnWidth(7, 260);
+    created.push(SHEET.pic);
+  }
   if (!ss.getSheetByName(SHEET.sdetail)) {
     var sd = ensureSheet_(SHEET.sdetail, HEAD.sdetail);
     sd.getRange(1, 7).setNote('先生が入力します（例：8/10、A、よくできました）。書いた内容が学生の結果画面に出ます。');
@@ -271,7 +314,8 @@ function setupSheets() {
     created.push(SHEET.sdetail);
   }
   [[SHEET.rsubs, HEAD.rsubs], [SHEET.rdetail, HEAD.rdetail], [SHEET.csubs, HEAD.csubs], [SHEET.cdetail, HEAD.cdetail],
-   [SHEET.osubs, HEAD.osubs], [SHEET.odetail, HEAD.odetail], [SHEET.lsubs, HEAD.lsubs], [SHEET.ldetail, HEAD.ldetail]].forEach(function (x) {
+   [SHEET.osubs, HEAD.osubs], [SHEET.odetail, HEAD.odetail], [SHEET.lsubs, HEAD.lsubs], [SHEET.ldetail, HEAD.ldetail],
+   [SHEET.psubs, HEAD.psubs], [SHEET.pdetail, HEAD.pdetail]].forEach(function (x) {
     if (!ss.getSheetByName(x[0])) { ensureSheet_(x[0], x[1]); created.push(x[0]); }
   });
   var addedRows = ensureSettingRows_();
@@ -287,12 +331,17 @@ function setupSheets() {
   } catch (e) {
     folderMsg += '\n録音フォルダを作れませんでした。Googleドライブにフォルダを作り、そのURLを「設定」シートの「録音フォルダ」に貼ってください。';
   }
+  try {
+    if (ensureImageFolder_()) folderMsg += '\nイラストの画像フォルダをGoogleドライブに作りました（URLは「設定」シートの「画像フォルダ」）。';
+  } catch (e) {
+    folderMsg += '\n画像フォルダを作れませんでした。Googleドライブにフォルダを作り、そのURLを「設定」シートの「画像フォルダ」に貼ってください。';
+  }
 
   if (addedRows.length) created.push('「設定」に ' + addedRows.join('・') + ' の行');
   alert_((created.length
     ? '作成したもの：' + created.join('、') +
       (created.indexOf(SHEET.words) >= 0 ? '\n「語リスト」の8語は動作確認用の例です。実際の語に置き換えてください。' : '') +
-      (created.indexOf(SHEET.cloze) >= 0 || created.indexOf(SHEET.order) >= 0 || created.indexOf(SHEET.listen) >= 0 || created.indexOf(SHEET.speak) >= 0 ? '\n灰色の行は入力の見本です（回が「例」なので出題されません）。' : '')
+      (created.indexOf(SHEET.cloze) >= 0 || created.indexOf(SHEET.order) >= 0 || created.indexOf(SHEET.listen) >= 0 || created.indexOf(SHEET.speak) >= 0 || created.indexOf(SHEET.pic) >= 0 ? '\n灰色の行は入力の見本です（回が「例」なので出題されません）。' : '')
     : 'すべてのシートはすでにあります。') + folderMsg);
 }
 
@@ -311,6 +360,8 @@ function ensureSettingRows_() {
 function ensureAudioFolder_() { return ensureFolderSetting_('音声フォルダ', '中国語テスト 音声'); }
 /** 「録音フォルダ」が空なら、同じようにフォルダを作る */
 function ensureRecFolder_() { return ensureFolderSetting_('録音フォルダ', '中国語テスト 録音'); }
+/** 「画像フォルダ」（イラストの絵）が空なら、同じようにフォルダを作る */
+function ensureImageFolder_() { return ensureFolderSetting_('画像フォルダ', '中国語テスト 画像'); }
 function ensureFolderSetting_(item, title) {
   var sh = sheet_(SHEET.settings);
   if (!sh) return '';
@@ -352,8 +403,8 @@ function issueCodes() {
 /* ===================== ウェブページ ===================== */
 
 function doGet() {
-  // スピーキング・並べ替えを使うクラス（そのシートがある）では、この画面では受けられないので、アプリへの案内だけを出す
-  if (sheet_(SHEET.speak) || sheet_(SHEET.order)) return appGuide_();
+  // スピーキング・並べ替え・イラストを使うクラス（そのシートがある）では、この画面では受けられないので、アプリへの案内だけを出す
+  if (sheet_(SHEET.speak) || sheet_(SHEET.order) || sheet_(SHEET.pic)) return appGuide_();
   var t = HtmlService.createTemplateFromFile('Index');
   t.course = readSettings_().course;
   return t.evaluate()
@@ -390,7 +441,7 @@ function doPost(e) {
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var fn = Object.prototype.hasOwnProperty.call(API, req.fn) ? API[req.fn] : null;
-    out = fn ? fn.apply(null, Array.isArray(req.args) ? req.args.slice(0, 9) : [])
+    out = fn ? fn.apply(null, Array.isArray(req.args) ? req.args.slice(0, 10) : [])
              : fail_('不明な呼び出しです。');
   } catch (err) {
     console.error(err);
@@ -426,11 +477,12 @@ function api_status(code) {
   var nOrder = s.round ? orderFor_(st.code, s.round).length : 0;
   var nListen = s.round ? listenFor_(st.code, s.round).length : 0;
   var nSpeak = s.round ? speakFor_(st.code, s.round).length : 0;
+  var nPic = s.round ? picCount_(picFor_(st.code, s.round)) : 0;
   return {
     ok: true, course: s.course, name: st.name, round: s.round, open: s.open,
     submitted: history.some(function (h) { return h.round === s.round; }),
-    count: nWords + nCloze + nOrder + nListen + nReading + nSpeak, countWords: nWords, countCloze: nCloze, countOrder: nOrder,
-    countListen: nListen, countReading: nReading, countSpeak: nSpeak,
+    count: nWords + nCloze + nOrder + nListen + nPic + nReading + nSpeak, countWords: nWords, countCloze: nCloze, countOrder: nOrder,
+    countListen: nListen, countPic: nPic, countReading: nReading, countSpeak: nSpeak,
     labels: s.labels, history: history
   };
 }
@@ -457,7 +509,8 @@ function api_start(code, opts) {
   var order = orderFor_(as, round);
   var listen = listenFor_(as, round);
   var speak = speakFor_(as, round);
-  if (!list.length && !reading.length && !cloze.length && !order.length && !listen.length && !speak.length) return fail_('第' + round + '回の問題はまだ設定されていません。');
+  var pic = picFor_(as, round);
+  if (!list.length && !reading.length && !cloze.length && !order.length && !listen.length && !speak.length && !pic.length) return fail_('第' + round + '回の問題はまだ設定されていません。');
   var sr = Object.assign({}, s, { round: round });
   var audio = loadAudio_(s.audioFolder, listen.map(function (q) { return q.file; }));
   return {
@@ -466,6 +519,7 @@ function api_start(code, opts) {
     cloze: cloze.map(function (q) { return { text: q.text, options: q.options }; }),
     order: order.map(function (q) { return { options: q.options, pick: q.pick, ja: q.ja }; }),
     listen: listen.map(function (q) { return audioOut_({ text: q.text, options: q.options }, audio[q.file], pv); }),
+    pic: picOut_(pic, round, pv, false),
     reading: reading.map(function (p) {
       return { pid: p.pid, title: p.title, text: p.text, notes: p.notes,
         questions: p.questions.map(function (q) { return { text: q.text, options: q.options }; }) };
@@ -478,17 +532,18 @@ function api_start(code, opts) {
  * 提出：サーバー側で採点し、記録する。同じ回の2回目以降は受け付けない。プレビューは採点だけして記録しない。
  * スピーキングの録音（speakAnswers: [{i: 課題の番号, mime, data: base64}]）はドライブに保存し、評価は先生が後で書き込む。
  * 並べ替え（orderAnswers: [{i: 問題の番号, choice: 選んだ文}]）は後から足した引数。古い画面からは届かない（未回答になる）
+ * イラスト（picAnswers: [{g: 組の番号（出題順）, i: 組の中の問題の番号, choice: 'A'〜'F'}]）も後から足した引数
  */
-function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers, orderAnswers) {
+function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, listenAnswers, speakAnswers, orderAnswers, picAnswers) {
   var s0 = readSettings_();
   if (isPreview_(code, s0)) {
     var r = normRound_(round), as = previewAs_(opts);
     var g = grade_(wordsFor_(as, r), readingFor_(as, r), answers, readingAnswers, clozeFor_(as, r), clozeAnswers, listenFor_(as, r), listenAnswers,
-      orderFor_(as, r), orderAnswers);
+      orderFor_(as, r), orderAnswers, picFor_(as, r), picAnswers);
     var pspeak = speakFor_(as, r), precs = recordingsFor_(pspeak, speakAnswers);
     if (typeof precs === 'string') return fail_(precs);
     var res = { round: r, date: fmtDate_(new Date()), correct: g.correct, total: g.total, items: g.items, reading: g.reading,
-      cloze: g.cloze, order: g.order, listen: listenOut_(g.listen), speak: speakOut_(pspeak, precs, s0, true), labels: s0.labels, preview: true };
+      cloze: g.cloze, order: g.order, listen: listenOut_(g.listen), pic: g.pic, speak: speakOut_(pspeak, precs, s0, true), labels: s0.labels, preview: true };
     return { ok: true, result: res };
   }
   var lock = LockService.getScriptLock();
@@ -505,12 +560,13 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
     var now = new Date();
     var list = wordsFor_(st.code, s.round), reading = readingFor_(st.code, s.round), cloze = clozeFor_(st.code, s.round);
     var listen = listenFor_(st.code, s.round), speak = speakFor_(st.code, s.round), order = orderFor_(st.code, s.round);
+    var pic = picFor_(st.code, s.round);
     var recs = recordingsFor_(speak, speakAnswers);
     if (typeof recs === 'string') return fail_(recs);
     var urls; // 録音を先に保存する。保存できなければ何も記録せず、もう一度提出してもらう
     try { urls = saveRecordings_(s, st, recs); }
     catch (e) { console.error(e); return fail_('録音を保存できませんでした。少し待ってから、もう一度「提出する」を押してください。'); }
-    var g2 = grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers);
+    var g2 = grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers, pic, picAnswers);
     var head = [now, s.round, st.code, st.name];
     if (list.length) {
       writeRows_(SHEET.subs, HEAD.subs, [head.concat([g2.vCorrect, list.length, g2.vCorrect / list.length])]);
@@ -549,6 +605,16 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
         return head.concat([safeCell_(q.file), safeCell_(q.text), safeCell_(q.answer), q.choice ? safeCell_(q.choice) : UNANSWERED, q.ok ? '○' : '×']);
       }));
     }
+    if (pic.length) {
+      writeRows_(SHEET.psubs, HEAD.psubs, [head.concat([g2.pCorrect, g2.pTotal, g2.pTotal ? g2.pCorrect / g2.pTotal : 0])]);
+      var prows = [];
+      g2.pic.forEach(function (g) {
+        g.questions.forEach(function (q) {
+          prows.push(head.concat([safeCell_(g.gid), safeCell_(q.text), q.answer, q.choice || UNANSWERED, q.ok ? '○' : '×']));
+        });
+      });
+      writeRows_(SHEET.pdetail, HEAD.pdetail, prows);
+    }
     if (speak.length) {
       writeRows_(SHEET.sdetail, HEAD.sdetail, speak.map(function (q, i) {
         return head.concat([safeCell_(q.text), urls[i] || UNRECORDED, '', '']);
@@ -556,14 +622,14 @@ function api_submit(code, round, answers, readingAnswers, opts, clozeAnswers, li
     }
     SpreadsheetApp.flush();
     return { ok: true, result: { round: s.round, date: fmtDate_(now), correct: g2.correct, total: g2.total, items: g2.items, reading: g2.reading,
-      cloze: g2.cloze, order: g2.order, listen: listenOut_(g2.listen), speak: speakOut_(speak, recs, s, false), labels: s.labels } };
+      cloze: g2.cloze, order: g2.order, listen: listenOut_(g2.listen), pic: g2.pic, speak: speakOut_(speak, recs, s, false), labels: s.labels } };
   } finally {
     lock.releaseLock();
   }
 }
 
-/** 単語・読解・穴埋め・聴解・並べ替えを採点する（記録はしない） */
-function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers) {
+/** 単語・読解・穴埋め・聴解・並べ替え・イラストを採点する（記録はしない） */
+function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, listen, listenAnswers, order, orderAnswers, pic, picAnswers) {
   var ans = Array.isArray(answers) ? answers.slice(0, 500) : [];
   var vCorrect = 0;
   var items = list.map(function (w) {
@@ -641,9 +707,26 @@ function grade_(list, reading, answers, readingAnswers, cloze, clozeAnswers, lis
     if (ok) oCorrect++;
     return { options: q.options, answer: q.answer, choice: choice, ok: ok, note: q.note, pick: q.pick, ja: q.ja };
   });
-  return { items: items, reading: rres, cloze: cres, listen: lres, order: ores, vCorrect: vCorrect, rCorrect: rCorrect, rTotal: rTotal,
-    cCorrect: cCorrect, lCorrect: lCorrect, oCorrect: oCorrect,
-    correct: vCorrect + rCorrect + cCorrect + lCorrect + oCorrect, total: list.length + rTotal + cres.length + lres.length + ores.length };
+  // イラストは、出題順の組の番号（g）と組の中の番号（i）で対応させる。choice は絵の記号（A〜F）
+  var pans = Array.isArray(picAnswers) ? picAnswers.slice(0, 500) : [];
+  var pCorrect = 0, pTotal = 0;
+  var pres = (pic || []).map(function (g, gi) {
+    return { gid: g.gid, questions: g.questions.map(function (q, qi) {
+      var a = null;
+      for (var k = 0; k < pans.length; k++) {
+        var x = pans[k];
+        if (x && typeof x === 'object' && Number(x.g) === gi && Number(x.i) === qi) { a = x; break; }
+      }
+      var choice = a ? norm_(a.choice).normalize('NFKC').toUpperCase() : '';
+      if (PIC_LETTERS.indexOf(choice) < 0) choice = '';
+      var ok = !!choice && choice === q.answer;
+      pTotal++; if (ok) pCorrect++;
+      return { text: q.text, pinyin: q.pinyin, answer: q.answer, choice: choice, ok: ok, note: q.note };
+    }) };
+  });
+  return { items: items, reading: rres, cloze: cres, listen: lres, order: ores, pic: pres, vCorrect: vCorrect, rCorrect: rCorrect, rTotal: rTotal,
+    cCorrect: cCorrect, lCorrect: lCorrect, oCorrect: oCorrect, pCorrect: pCorrect, pTotal: pTotal,
+    correct: vCorrect + rCorrect + cCorrect + lCorrect + oCorrect + pCorrect, total: list.length + rTotal + cres.length + lres.length + ores.length + pTotal };
 }
 
 /** プレビュー用のホーム情報：問題が登録されている回と、学生の一覧 */
@@ -655,6 +738,7 @@ function previewStatus_(s) {
   rows_(SHEET.order, HEAD.order.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   rows_(SHEET.listen, HEAD.listen.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
   rows_(SHEET.speak, HEAD.speak.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[2])) rounds[rd] = true; });
+  rows_(SHEET.pic, HEAD.pic.length).forEach(function (r) { var rd = normRound_(r[0]); if (rd && norm_(r[3])) rounds[rd] = true; });
   var list = Object.keys(rounds).sort(function (a, b) { return (Number(a) - Number(b)) || a.localeCompare(b); });
   var students = rows_(SHEET.students, HEAD.students.length)
     .filter(function (r) { return normCode_(r[0]); })
@@ -752,8 +836,23 @@ function api_result(code, round) {
     o.audio = a && a.data ? { mime: a.mime, data: a.data } : null;
     return modelOut_(o, info.model, saudio, false);
   });
+  // イラスト：組ごとにまとめ、絵は「イラストの絵」、拼音・解説は「イラスト」シートの今の内容を添える
+  var pinfo = {};
+  rows_(SHEET.pic, HEAD.pic.length).forEach(function (x) {
+    if (normRound_(x[0]) !== r) return;
+    var k = picGid_(x[2]) + '\n' + pinyinText_(x[3]);
+    if (!(k in pinfo)) pinfo[k] = { pinyin: picPinyin_(x[4]), note: pinyinText_(x[6]) };
+  });
+  var pgroups = [], byGid = {}, pimgs = picImages_(r);
+  rows_(SHEET.pdetail, HEAD.pdetail.length).filter(mine).forEach(function (x) {
+    var gid = picGid_(unCell_(x[4])), t = unCell_(x[5]), c = norm_(x[7]), info = pinfo[gid + '\n' + t] || {};
+    if (!byGid[gid]) { byGid[gid] = { gid: gid, images: pimgs[gid] || [], questions: [] }; pgroups.push(byGid[gid]); }
+    byGid[gid].questions.push({ text: t, pinyin: info.pinyin || '', answer: norm_(x[6]), choice: c === UNANSWERED ? '' : c,
+      ok: norm_(x[8]) === '○', note: info.note || '' });
+  });
+  var pic = picOut_(pgroups, r, false, true);
   return { ok: true, result: { round: r, date: fmtDate_(last), correct: correct, total: total, items: items, reading: reading,
-    cloze: cloze, order: order, listen: listen, speak: speak, labels: s.labels } };
+    cloze: cloze, order: order, listen: listen, pic: pic, speak: speak, labels: s.labels } };
 }
 
 /* ===================== 内部処理 ===================== */
@@ -907,9 +1006,10 @@ function readSettings_() {
     preview: normCode_(map['プレビュー用コード']),
     audioFolder: norm_(map['音声フォルダ']),
     recFolder: norm_(map['録音フォルダ']),
+    imageFolder: norm_(map['画像フォルダ']),
     appUrl: norm_(map['アプリのURL']),
     labels: { cloze: norm_(map['穴埋めの見出し']) || '穴埋め', order: norm_(map['並べ替えの見出し']) || '並べ替え', listen: norm_(map['聴解の見出し']) || '聴解',
-      speak: norm_(map['スピーキングの見出し']) || 'スピーキング' }
+      speak: norm_(map['スピーキングの見出し']) || 'スピーキング', pic: norm_(map['イラストの見出し']) || 'イラスト' }
   };
 }
 
@@ -1025,6 +1125,66 @@ function listenFor_(code, round) {
 function listenOut_(list) {
   return (list || []).map(function (q) { return { text: q.text, answer: q.answer, choice: q.choice, ok: q.ok, note: q.note }; });
 }
+/** 「組」の欄。空なら 1、全角の数字は半角にする */
+function picGid_(v) { return norm_(v).normalize('NFKC') || '1'; }
+/** 拼音の欄（数字つきでも声調記号でも書ける） */
+function picPinyin_(v) { return numToMark_(norm_(v)).normalize('NFC'); }
+/** その回の絵 → { 組: [{letter: 'A', file: ファイル名}] }。同じ回・同じ組の行が2つあれば上の行を使う */
+function picImages_(round) {
+  var out = {};
+  rows_(SHEET.pimg, HEAD.pimg.length).forEach(function (r) {
+    if (normRound_(r[0]) !== round) return;
+    var gid = picGid_(r[1]);
+    if (out[gid]) return;
+    var list = [];
+    for (var i = 0; i < PIC_LETTERS.length; i++) {
+      var f = norm_(r[2 + i]);
+      if (f) list.push({ letter: PIC_LETTERS[i], file: f });
+    }
+    if (list.length >= 2) out[gid] = list;
+  });
+  return out;
+}
+/**
+ * その学生のその回のイラストの問題を組ごとにまとめる → [{gid, images: [{letter, file}], questions: [{text, pinyin, answer, note}]}]
+ * 組の絵が2枚未満、または正解の記号に絵がない行は出題しない
+ */
+function picFor_(code, round) {
+  var imgs = picImages_(round), seen = {}, groups = [], byGid = {};
+  rows_(SHEET.pic, HEAD.pic.length).forEach(function (r) {
+    if (normRound_(r[0]) !== round || !forCode_(norm_(r[1]), code)) return;
+    var gid = picGid_(r[2]), text = pinyinText_(r[3]), images = imgs[gid];
+    if (!text || !images || seen[gid + '\n' + text]) return;
+    var answer = norm_(r[5]).normalize('NFKC').toUpperCase();
+    if (!images.some(function (im) { return im.letter === answer; })) return;
+    seen[gid + '\n' + text] = true;
+    if (!byGid[gid]) { byGid[gid] = { gid: gid, images: images, questions: [] }; groups.push(byGid[gid]); }
+    byGid[gid].questions.push({ text: text, pinyin: picPinyin_(r[4]), answer: answer, note: pinyinText_(r[6]) });
+  });
+  return groups;
+}
+function picCount_(groups) { var n = 0; groups.forEach(function (g) { n += g.questions.length; }); return n; }
+/**
+ * 画面に返すイラストの問題・結果。絵は画像フォルダから読み込んで添える（ファイル名は返さない）。
+ * withAnswers が false（テスト中）なら、文と拼音だけを返す
+ */
+function picOut_(groups, round, detailed, withAnswers) {
+  if (!groups.length) return [];
+  var names = [];
+  groups.forEach(function (g) { g.images.forEach(function (im) { names.push(im.file); }); });
+  var data = loadImages_(readSettings_().imageFolder, names);
+  return groups.map(function (g) {
+    return {
+      gid: g.gid,
+      images: g.images.map(function (im) {
+        var a = data[im.file], ok = a && a.data;
+        return { letter: im.letter, image: ok ? { mime: a.mime, data: a.data } : null,
+          error: ok ? '' : detailed ? ((a && a.error) || '絵を読み込めませんでした') : '絵を準備できませんでした。先生に知らせてください。' };
+      }),
+      questions: g.questions.map(function (q) { return withAnswers ? q : { text: q.text, pinyin: q.pinyin }; })
+    };
+  });
+}
 /** その学生のその回のスピーキングの課題。課題・補足の数字つき拼音は声調記号に直す */
 function speakFor_(code, round) {
   var seen = {}, out = [];
@@ -1114,15 +1274,22 @@ function audioOut_(o, a, detailed) {
 
 /** 音声フォルダ（中のフォルダも含む）から、名前の一覧のファイルを読み込む → { 名前: {mime, data(base64)} または {error} } */
 function loadAudio_(folderRef, names) {
+  return loadFiles_(folderRef, names, { folder: '音声フォルダ', what: '音声ファイル', key: 'au:', exts: AUDIO_MIME, data: audioData_ });
+}
+/** 画像フォルダ（中のフォルダも含む）から、イラストの絵を読み込む */
+function loadImages_(folderRef, names) {
+  return loadFiles_(folderRef, names, { folder: '画像フォルダ', what: '絵のファイル', key: 'im:', exts: IMAGE_MIME, data: imageData_ });
+}
+function loadFiles_(folderRef, names, K) {
   var out = {}, uniq = [];
   names.forEach(function (n) { if (n && !(n in out)) { out[n] = null; uniq.push(n); } });
   if (!uniq.length) return out;
   var fail = function (msg) { uniq.forEach(function (n) { out[n] = { error: msg }; }); return out; };
   var fid = folderId_(folderRef);
-  if (!fid) return fail('「設定」シートの「音声フォルダ」が空か、URLが正しくありません');
+  if (!fid) return fail('「設定」シートの「' + K.folder + '」が空か、URLが正しくありません');
   var root;
-  try { root = DriveApp.getFolderById(fid); } catch (e) { return fail('音声フォルダを開けませんでした（「設定」の「音声フォルダ」のURLを確認してください）'); }
-  var tree = null; // 音声フォルダと、その中のフォルダ（必要になったときに一度だけ調べる）
+  try { root = DriveApp.getFolderById(fid); } catch (e) { return fail(K.folder + 'を開けませんでした（「設定」の「' + K.folder + '」のURLを確認してください）'); }
+  var tree = null; // フォルダと、その中のフォルダ（必要になったときに一度だけ調べる）
   var folders = function () {
     if (tree) return tree;
     tree = [root];
@@ -1138,12 +1305,12 @@ function loadAudio_(folderRef, names) {
   try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
   uniq.forEach(function (n) {
     try {
-      var key = 'au:' + fid + ':' + fileKey_(n);
-      var f = cachedAudioFile_(cache, key, n) || findAudioFile_(root, n, folders);
+      var key = K.key + fid + ':' + fileKey_(n);
+      var f = cachedAudioFile_(cache, key, n) || findAudioFile_(root, n, folders, K.exts);
       if (f && cache) { try { cache.put(key, f.getId(), 21600); } catch (e) { /* キャッシュは使えなくてもよい */ } }
-      out[n] = f ? audioData_(f) : { error: '音声ファイル「' + n + '」が音声フォルダ（中のフォルダも含む）にありません' };
+      out[n] = f ? K.data(f) : { error: K.what + '「' + n + '」が' + K.folder + '（中のフォルダも含む）にありません' };
     } catch (e) {
-      out[n] = { error: '音声ファイル「' + n + '」を読み込めませんでした' };
+      out[n] = { error: K.what + '「' + n + '」を読み込めませんでした' };
     }
   });
   return out;
@@ -1180,10 +1347,10 @@ function pickAudioFile_(it, limit, name) {
   return best;
 }
 /** 1つのフォルダの中を名前で検索する（完全一致 → 前方一致） */
-function searchAudioIn_(folder, name) {
+function searchAudioIn_(folder, name, exts) {
   var raw = norm_(name), esc = function (t) { return t.replace(/["\\]/g, '\\$&'); };
   var base = raw.replace(/\.[A-Za-z0-9]{1,5}$/, '');
-  var titles = base === raw ? [raw].concat(Object.keys(AUDIO_MIME).map(function (e) { return raw + '.' + e; })) : [raw];
+  var titles = base === raw ? [raw].concat(Object.keys(exts || AUDIO_MIME).map(function (e) { return raw + '.' + e; })) : [raw];
   try {
     var q = '(' + titles.map(function (t) { return 'title = "' + esc(t) + '"'; }).join(' or ') + ') and trashed = false';
     var hit = pickAudioFile_(folder.searchFiles(q), 50, name);
@@ -1193,11 +1360,11 @@ function searchAudioIn_(folder, name) {
   catch (e) { return null; }
 }
 /** 音声フォルダの直下 → 中のフォルダ の順に探す。検索が使えないときはフォルダの中を順に見る */
-function findAudioFile_(root, name, folders) {
-  var hit = searchAudioIn_(root, name);
+function findAudioFile_(root, name, folders, exts) {
+  var hit = searchAudioIn_(root, name, exts);
   if (hit) return hit;
   var list = folders(), i;
-  for (i = 1; i < list.length; i++) { hit = searchAudioIn_(list[i], name); if (hit) return hit; }
+  for (i = 1; i < list.length; i++) { hit = searchAudioIn_(list[i], name, exts); if (hit) return hit; }
   var budget = 3000;
   for (i = 0; i < list.length && budget > 0; i++) {
     try { hit = pickAudioFile_(list[i].getFiles(), budget, name); } catch (e) { hit = null; }
@@ -1213,6 +1380,14 @@ function audioData_(f) {
   var mime = AUDIO_MIME[ext] || (/^(audio|video)\//.test(type) ? type : '');
   if (!mime) return { error: '「' + f.getName() + '」は音声ファイルではないようです' };
   if (mime === 'video/mp4' || mime === 'audio/x-m4a') mime = 'audio/mp4';
+  return { mime: mime, data: Utilities.base64Encode(f.getBlob().getBytes()) };
+}
+function imageData_(f) {
+  if (f.getSize() > IMAGE_MAX) return { error: '絵のファイル「' + f.getName() + '」が大きすぎます（1MBまで）' };
+  var ext = ((f.getName().match(/\.([A-Za-z0-9]{1,5})$/) || [])[1] || '').toLowerCase();
+  var type = norm_(f.getMimeType());
+  var mime = IMAGE_MIME[ext] || (/^image\/(png|jpeg|gif|webp)$/.test(type) ? type : '');
+  if (!mime) return { error: '「' + f.getName() + '」は使える画像ではないようです（jpg・png・gif・webp）' };
   return { mime: mime, data: Utilities.base64Encode(f.getBlob().getBytes()) };
 }
 
