@@ -277,4 +277,78 @@ assert.strictEqual(gs.sheets['並べ替え明細'][1].length, 9); // 明細の�
 g = gs.ctx.doGet().html;
 assert.ok(/テストはアプリで受けてください/.test(g) && !/スピーキング/.test(g), g);
 
+// 8) イラスト：組ごとの絵（A〜F）を見て、文に合う絵を選ぶ
+tb = tables();
+tb['イラストの絵'] = [['回', '組', '絵A', '絵B', '絵C', '絵D', '絵E', '絵F'],
+  ['例', 1, 'x', 'y', '', '', '', ''],
+  [1, 1, 'run', 'basket.png', 'doctor', '', 'shirt', ''],
+  [1, '２', 'tea', 'big.jpg', '', '', '', ''],
+  [1, 3, 'only-one', '', '', '', '', '']];
+tb['イラスト'] = [['回', 'コード', '組', '文', '拼音', '正解', '解説'],
+  ['例', '全員', 1, '见本', '', 'A', ''],
+  [1, '全員', 1, '儿子，跑慢点儿，等等我。', 'Er2zi, pao3 man4 dian3r, deng3deng wo3.', 'a', '「跑」＝走る'],
+  [1, '全員', '', '每个星期六，我都去打篮球。', '', 'Ｂ', ''],
+  [1, '全員', 1, '这件衣服能不能再便宜一些？', '', 'E', ''],
+  [1, '全員', 1, '正解の絵がない', '', 'D', ''],
+  [1, '全員', 2, '我想喝茶。', '', 'A', ''],
+  [1, '全員', 3, '絵が1枚だけの組', '', 'A', ''],
+  [1, 'zzz999', 1, 'ほかの学生だけ', '', 'A', '']];
+gs = sim.load(tb);
+var imgDir = gs.ctx.DriveApp.createFolder('画像');
+var png = Buffer.from('fake-png');
+['run.png', 'basket.png', 'doctor.jpg', 'shirt.webp', 'tea.gif'].forEach(function (n) { imgDir.createFile({ name: n, mime: 'image/png', bytes: Array.from(png) }); });
+imgDir.createFile({ name: 'big.jpg', mime: 'image/jpeg', bytes: new Array(1024 * 1024 + 1).fill(0) });
+gs.sheets['設定'].push(['画像フォルダ', imgDir.getUrl(), '']);
+assert.ok(gs.call('api_status', PREVIEW).rounds.indexOf('1') >= 0);
+st = gs.call('api_status', STUDENT);
+assert.ok(st.ok && st.countPic === 4 && st.count === 4 + 2 + 2 + 1 + 4, JSON.stringify(st));
+t = gs.call('api_start', STUDENT);
+assert.ok(t.ok, JSON.stringify(t));
+assert.strictEqual(t.pic.length, 2); // 絵が1枚だけの組は出さない
+assert.deepStrictEqual(t.pic[0].questions, [
+  { text: '儿子，跑慢点儿，等等我。', pinyin: 'Érzi, pǎo màn diǎnr, děngdeng wǒ.' },
+  { text: '每个星期六，我都去打篮球。', pinyin: '' },
+  { text: '这件衣服能不能再便宜一些？', pinyin: '' }]); // 正解の絵がない行は出さない。正解は送らない
+assert.deepStrictEqual(t.pic[0].images.map(function (im) { return [im.letter, !!im.image, im.error]; }),
+  [['A', true, ''], ['B', true, ''], ['C', true, ''], ['E', true, '']]);
+assert.strictEqual(Buffer.from(t.pic[0].images[0].image.data, 'base64').toString(), 'fake-png');
+assert.strictEqual(t.pic[0].images[3].image.mime, 'image/webp');
+assert.ok(t.pic[1].images[1].error && !/1MB/.test(t.pic[1].images[1].error)); // 学生には一般的な文だけ
+assert.ok(!/"answer"|"file"|run\.png/.test(JSON.stringify(t.pic)), '提出前に正解やファイル名が送られている');
+var pv = gs.call('api_start', PREVIEW, { round: '1' });
+assert.ok(/1MB/.test(pv.pic[1].images[1].error), JSON.stringify(pv.pic[1].images[1])); // プレビューでは理由を出す
+a = answersFor(t);
+var pa = [{ g: 0, i: 0, choice: 'A' }, { g: 0, i: 1, choice: 'c' }, { g: 1, i: 0, choice: 'A' }];
+r = gs.call('api_submit', PREVIEW, '1', a[0], a[1], { round: '1' }, a[2], a[3], [], [], pa);
+assert.ok(r.ok && r.result.preview, JSON.stringify(r));
+assert.deepStrictEqual(r.result.pic.map(function (g) { return g.questions.map(function (q) { return [q.ok, q.answer, q.choice]; }); }),
+  [[[true, 'A', 'A'], [false, 'B', 'C'], [false, 'E', '']], [[true, 'A', 'A']]]);
+assert.ok(!gs.sheets['イラスト提出'] || gs.sheets['イラスト提出'].length <= 1);
+// 古い画面（イラストの答えを送らない）からの提出は、未回答になる
+r = gs.call('api_submit', PREVIEW, '1', a[0], a[1], { round: '1' }, a[2], a[3], [], []);
+assert.deepStrictEqual(r.result.pic[0].questions.map(function (q) { return q.ok; }), [false, false, false]);
+r = gs.call('api_submit', STUDENT, '1', a[0], a[1], null, a[2], a[3], [], [], pa);
+assert.ok(r.ok, JSON.stringify(r));
+var pd = gs.sheets['イラスト明細'];
+assert.strictEqual(pd.length, 5);
+assert.deepStrictEqual(pd[1].slice(4), ['1', '儿子，跑慢点儿，等等我。', 'A', 'A', '○']);
+assert.deepStrictEqual(pd[3].slice(4), ['1', '这件衣服能不能再便宜一些？', 'E', '（未回答）', '×']);
+assert.deepStrictEqual(gs.sheets['イラスト提出'][1].slice(4, 6), [2, 4]);
+res = gs.call('api_result', STUDENT, '1');
+assert.ok(res.ok, JSON.stringify(res));
+assert.strictEqual(res.result.total, 4 + 2 + 2 + 1 + 4);
+assert.deepStrictEqual(res.result.pic.map(function (g) { return g.gid; }), ['1', '2']);
+assert.deepStrictEqual(res.result.pic[0].questions[0], { text: '儿子，跑慢点儿，等等我。', pinyin: 'Érzi, pǎo màn diǎnr, děngdeng wǒ.', answer: 'A', choice: 'A', ok: true, note: '「跑」＝走る' });
+assert.deepStrictEqual(res.result.pic[0].images.map(function (im) { return im.letter; }), ['A', 'B', 'C', 'E']);
+assert.ok(res.result.pic[0].images[0].image);
+assert.ok(gs.call('api_status', STUDENT).submitted);
+// イラストのシートがあるクラスでは、前の画面はアプリへの案内だけ
+assert.ok(/テストはアプリで受けてください/.test(gs.ctx.doGet().html));
+// イラストだけの回でも受けられる。画像フォルダが空なら、プレビューではその理由を出す
+tb = { '設定': tables()['設定'], '学生': tables()['学生'], 'イラストの絵': tb['イラストの絵'], 'イラスト': tb['イラスト'] };
+gs = sim.load(tb);
+t = gs.call('api_start', STUDENT);
+assert.ok(t.ok && t.pic.length === 2, JSON.stringify(t));
+assert.ok(/画像フォルダ/.test(gs.call('api_start', PREVIEW, { round: '1' }).pic[0].images[0].error));
+
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');
