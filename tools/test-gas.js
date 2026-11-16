@@ -351,4 +351,23 @@ t = gs.call('api_start', STUDENT);
 assert.ok(t.ok && t.pic.length === 2, JSON.stringify(t));
 assert.ok(/画像フォルダ/.test(gs.call('api_start', PREVIEW, { round: '1' }).pic[0].images[0].error));
 
+// 語リストの「形式（任意）」：書いた語はその形式だけで出る（表記ゆれも読む）。書いていない語・読めない値は「設定」どおり
+tb = tables();
+tb['語リスト'][0].push('形式（任意）');
+tb['語リスト'].push([1, '全員', '学生', 'xue2sheng5', '学生', '拼音→中'], [1, '全員', '中午', 'zhong1wu3', 'お昼', 'ピンイン -> 中国語'],
+  [1, '全員', '下午', 'xia4wu3', '午後', '中→日、日→中'], [1, '全員', '好久不见', 'hao3jiu3bu2jian4', '久しぶり', 'なんでも']);
+gs = sim.load(tb);
+for (var rep = 0; rep < 30; rep++) {
+  t = gs.call('api_start', PREVIEW, { round: '1' });
+  assert.strictEqual(t.questions.length, 8);
+  var qs = t.questions.filter(function (q) { return q.prompt === 'xuésheng' || q.prompt === 'zhōngwǔ'; });
+  assert.strictEqual(qs.length, 2, JSON.stringify(t.questions));
+  qs.forEach(function (q) { assert.strictEqual(q.type, 'ph'); });
+  var xw = t.questions.filter(function (q) { return q.prompt === '下午' || q.prompt === '午後'; });
+  assert.strictEqual(xw.length, 1);
+  assert.ok(xw[0].type === 'hm' || xw[0].type === 'mh', xw[0].type);
+}
+r = gs.call('api_submit', PREVIEW, '1', t.questions.map(function (q) { return { type: q.type, prompt: q.prompt, choice: q.prompt === 'xuésheng' ? '学生' : q.options[0] }; }), [], { round: '1' }, [], []);
+assert.ok(r.ok && r.result.items.filter(function (d) { return d.hanzi === '学生'; })[0].ok, JSON.stringify(r));
+
 console.log('OK   apps-script/Code.gs（手元のシミュレーション）');
