@@ -161,18 +161,27 @@ details.reread .p-text{margin-top:10px}
 @media (prefers-reduced-motion: no-preference){ .opt{transition:background-color .12s,border-color .12s} }
 /* ---- イラスト（絵を見て選ぶ） ---- */
 .pic-set{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;display:grid;gap:10px}
-.pic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:10px}
+.pic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(9rem,1fr));gap:10px;align-items:start}
 .pic-grid.sm{grid-template-columns:repeat(auto-fill,minmax(5.5rem,1fr));gap:8px}
-.pic-cell{position:relative;margin:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#fff;aspect-ratio:4/3;display:grid;place-items:center}
-.pic-cell img{width:100%;height:100%;object-fit:contain;display:block}
+.pic-cell{position:relative;margin:0;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#fff;min-height:4rem;display:grid;place-items:center;width:100%;font:inherit;color:inherit}
+button.pic-cell{cursor:zoom-in}
+.pic-cell img{width:100%;height:auto;display:block}
+.pic-cell .zm{position:absolute;right:4px;bottom:4px;font-size:.7rem;font-weight:700;color:var(--jade);background:var(--card);border:1px solid var(--line-strong);border-radius:4px;padding:0 5px;line-height:1.6}
+.pic-grid.sm .pic-cell .zm{display:none}
+.zoom{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.82);display:grid;place-items:center;padding:16px;cursor:zoom-out}
+.zoom figure{margin:0;display:grid;gap:10px;justify-items:center;max-width:100%}
+.zoom figure{width:min(100%,40rem)}
+.zoom img{width:100%;height:auto;max-height:78vh;object-fit:contain;background:#fff;border-radius:6px;display:block}
+.zoom figcaption{color:#fff;font-weight:700;font-size:1.1rem}
+.zoom .btn{justify-self:center}
 .pic-cell .pl{position:absolute;top:4px;left:4px;font-weight:700;font-size:.85rem;background:var(--card);color:var(--ink);border:1px solid var(--line-strong);border-radius:4px;width:1.6rem;text-align:center;line-height:1.5}
 .pic-err{margin:0;font-size:.78rem;color:var(--ng);padding:6px 6px 6px 2.2rem;line-height:1.4}
 .pic-text{margin:0;font-family:var(--f-zh);font-size:1.15rem;font-weight:500;line-height:1.6}
 .pic-py{display:block;font-size:.85rem;color:var(--sub);font-weight:400;line-height:1.4}
-.pic-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(4.2rem,1fr));gap:8px}
+.pic-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(6rem,1fr));gap:8px}
 .pic-opt{position:relative;border:1px solid var(--line);border-radius:6px;padding:4px 4px 2px;cursor:pointer;display:grid;gap:2px;justify-items:center}
 .pic-opt input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
-.pic-opt img,.pic-opt .ph{width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border-radius:4px;display:block}
+.pic-opt img,.pic-opt .ph{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff;border-radius:4px;display:block}
 .pic-opt b{font-size:.9rem}
 .pic-opt:has(input:checked){border-color:var(--jade);background:var(--jade-soft);box-shadow:0 0 0 2px var(--jade)}
 .pic-opt:has(input:focus-visible){outline:2px solid var(--jade);outline-offset:2px}
@@ -575,7 +584,7 @@ details.reread .p-text{margin-top:10px}
     });
     if (t.pic.length && multi) h += '<h2 class="sec-title">' + esc(lb.pic) + '</h2>';
     t.pic.forEach(function(gr, gi){
-      h += '<section class="pic-set"><p class="muted">下の文に合う絵を、' + gr.images.map(function(im){ return im.letter; }).join('・') + ' から1つずつ選んでください。</p>' +
+      h += '<section class="pic-set"><p class="muted">下の文に合う絵を、' + gr.images.map(function(im){ return im.letter; }).join('・') + ' から1つずつ選んでください。絵を押すと大きく見られます。</p>' +
            picGrid(gr.images, false) + '</section>';
       gr.questions.forEach(function(q, qi){
         var g = 'p' + gi + '_' + qi;
@@ -638,10 +647,22 @@ details.reread .p-text{margin-top:10px}
   function picGrid(images, small){
     return '<div class="pic-grid' + (small ? ' sm' : '') + '">' + images.map(function(im){
       var src = picSrc(im);
-      return '<figure class="pic-cell"><span class="pl">' + esc(im.letter) + '</span>' +
-        (src ? '<img src="' + src + '" alt="絵' + esc(im.letter) + '">' : '<p class="pic-err">' + esc(im.error || '絵を読み込めませんでした') + '</p>') + '</figure>';
+      if (!src) return '<div class="pic-cell"><span class="pl">' + esc(im.letter) + '</span><p class="pic-err">' + esc(im.error || '絵を読み込めませんでした') + '</p></div>';
+      return '<button type="button" class="pic-cell" data-zoom="' + esc(src) + '" data-letter="' + esc(im.letter) + '" aria-label="絵' + esc(im.letter) + 'を大きく見る">' +
+        '<span class="pl">' + esc(im.letter) + '</span><img src="' + src + '" alt=""><span class="zm" aria-hidden="true">拡大</span></button>';
     }).join('') + '</div>';
   }
+  // 絵を押すと、画面いっぱいに大きく出す。どこを押しても閉じる
+  function openZoom(src, letter){
+    closeZoom();
+    var d = document.createElement('div');
+    d.className = 'zoom'; d.id = 'zoom'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', '絵' + letter);
+    d.innerHTML = '<figure><img src="' + esc(src) + '" alt="絵' + esc(letter) + '"><figcaption>' + esc(letter) + '</figcaption>' +
+      '<button type="button" class="btn" id="zoomClose">閉じる</button></figure>';
+    document.body.appendChild(d);
+    d.querySelector('#zoomClose').focus();
+  }
+  function closeZoom(){ var d = document.getElementById('zoom'); if (d) d.remove(); }
   function picTextHtml(q){ return (q.pinyin ? '<span class="pic-py" lang="zh-Latn">' + esc(q.pinyin) + '</span>' : '') + esc(q.text); }
   function picAns(images, letter){ // 記号と小さな絵
     var im = null;
@@ -1034,6 +1055,7 @@ details.reread .p-text{margin-top:10px}
   }
 
   /* ---------- イベント ---------- */
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeZoom(); });
   document.addEventListener('change', function(e){
     var g = e.target.name;
     if (!g || !/^(q\d+|c\d+|o\d+|l\d+|r\d+_\d+|p\d+_\d+)$/.test(g) || !S.test) return;
@@ -1042,7 +1064,9 @@ details.reread .p-text{margin-top:10px}
     if (!bar.querySelector('#confirmBtn')) renderBar();
   });
   document.addEventListener('click', function(e){
+    if (document.getElementById('zoom')){ closeZoom(); return; } // 大きく出した絵は、どこを押しても閉じる
     var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.zoom){ openZoom(b.dataset.zoom, b.dataset.letter || ''); return; }
     if (b.id === 'startBtn') startTest(b);
     else if (b.id === 'pvStart') startPreview(b);
     else if (b.id === 'submitBtn'){ if (REC.key != null) stopRec(); renderBar(true); }
